@@ -1,6 +1,6 @@
 # CitizenSolver
 
-An independent, local Star Citizen loadout optimizer, intended to power a free tool on **concrete-foundry.com**. The website UI comes later; this repository contains the calculation/search engine, a command-line interface, and a local JSON API.
+An independent, local Star Citizen loadout optimizer, intended to power a free tool on **concrete-foundry.com**. This repository contains the calculation/search engine, a command-line interface, and a local JSON API.
 
 **Version 0.1 is experimental.** It finds promising builds under an explicit approximation of SCM combat. It is not an in-game validated simulator, an erkul clone, or a guarantee of the best possible loadout. Read [the model and its limits](docs/model.md) before treating a recommendation as a purchase decision.
 
