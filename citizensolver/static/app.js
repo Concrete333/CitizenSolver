@@ -168,7 +168,7 @@ async function loadOptions(initial = false) {
   $('game-version').textContent = options.data.game_version;
   const matched = options.ships.filter(s=>options.market.ships[s.id.toLowerCase()]).length;
   $('coverage').textContent = `${options.ships.length} ships · ${matched} matched price / size records`;
-  $('source-info').textContent = `Game data: StarCitizenWiki/scunpacked-data · Prices / dock classes: FleetYards · Market cache: ${options.market.downloaded_at?.slice(0,10) || 'not downloaded'}`;
+  $('source-info').textContent = `Game data: ${options.data.source} · Prices / dock classes: FleetYards · Market cache: ${options.market.downloaded_at?.slice(0,10) || 'not downloaded'}`;
   if (initial) {
     $('goal').replaceChildren(...options.objectives.filter(o=>!['pve','pvp'].includes(o.id)).map(o=>new Option(o.name,o.id)));
     $('role').append(...options.roles.map(r=>new Option(r,r)));

@@ -1,6 +1,6 @@
-# Calculation model: scm-estimate-1
+# Calculation model: scm-estimate-2
 
-This model is an explicit engineering approximation. The fields below are reproducible calculations, not claims of matching live Star Citizen or erkul. The optimizer can only be as accurate as this model and its source snapshot.
+This model is an explicit engineering approximation. Selected Meteor fits were calibrated against erkul on the same 4.10.2-LIVE.12913470 build; see the [comparison](../verification/meteor-erkul-12913470.md). This does not establish accuracy across ships or in the live game. The optimizer can only be as accurate as this model and its source snapshot.
 
 ## Scope
 
@@ -14,11 +14,13 @@ The primary mode's typed alpha damage already includes the extractor's projectil
 
 `burst_dps = hull_alpha * rounds_per_minute / 60`
 
-Energy weapons use the exported `Capacitor.MaxAmmoLoad`, `MaxRegenPerSec`, cooldown and ammo-per-shot. The weapon group's allocated power first covers ballistic demand; the remaining power scales energy recharge against the installed energy weapons' summed rated demand. Ammo capacity stays constant in this initial model.
+Looping and automatically repeated single-shot sequences use every entry's delay and repetition count: `effective_rpm = 60 * total_shots / total_sequence_seconds`. RPM delays become `60 / delay` seconds. The inner action's rate is not the sequence's rate. For example, the Echion's three intervals (800, 450, 450 RPM) yield 526.829 RPM. Local imports retain those previously omitted raw entries. Missing timing, mixed projectile/damage sequences and unsupported action types are rejected.
+
+Energy weapons use the exported `Capacitor.MaxAmmoLoad`, `MaxRegenPerSec`, cooldown and ammo-per-shot. The shared power fraction is `min(1, allocated_weapon_pips / total_rated_gun_power)` including ballistic guns. Capacity rounds half up after scaling by this fraction; recharge scales by the same fraction. Recovery time is cooldown plus the scaled, rounded load divided by scaled recharge. Burst damage stays unchanged by capacitor power; the firing/recovery duty cycle changes.
 
 `cycle_dps = shots_in_cycle * hull_alpha / (firing_seconds + recovery_seconds)`
 
-The heat model uses exported shots-to-overheat and overheat-fix time. If heat is the limiting cycle, energy recharge and heat recovery are assumed to happen concurrently after firing stops; recovery is the longer duration. Continuous cooling while firing, intentional trigger pacing, spin-up and synchronization between gun groups are not simulated. Charged, burst and beam primary modes are excluded rather than assigned a fabricated firing cycle.
+The heat model uses threshold temperature divided by heat per shot, falling back to exported shots-to-overheat if those inputs are absent. The shot that crosses the threshold counts: cycle damage uses the ceiling of that ratio, while firing time uses the continuous threshold time. This reproduces erkul's Leonids display of 17 shots over 14.7 seconds, followed by 6.5 seconds recovery; it is a cycle approximation, not discrete shot scheduling. If heat is the limiting cycle, energy recharge and heat recovery are assumed to happen concurrently after firing stops; recovery is the longer duration. Continuous cooling while firing, intentional trigger pacing, spin-up and synchronization between gun groups are not simulated. Charged, burst and beam primary modes are excluded rather than assigned a fabricated firing cycle.
 
 Finite engagement damage counts complete cycles plus the partial final firing window and caps ballistic shots at ammunition capacity. It uses continuous time windows, not discrete first-shot timing. Sustained DPS therefore need not equal finite-duration DPS, especially in a short engagement. Ballistic `ammo_trigger_seconds` means active trigger time to empty, excluding cooling pauses.
 
@@ -32,7 +34,7 @@ For multiple plants the current model follows the community extractor's formula:
 
 `available = sum(round_half_up(plant_generation / plant_count)) + (plant_count - 1) * sum(plant_size)`
 
-Cooler output is exported coolant generation times its allocated-power fraction and exported power-range modifier. Estimated heat load is allocated power plus proportional coolant demand from shields, radar and life support. Insufficient power or cooling makes a candidate infeasible. This is not a physical thermal simulation, damage network or relay simulation.
+Cooler output is exported coolant generation times its allocated-power fraction and exported power-range modifier. Estimated heat load is consumed power plus proportional coolant demand from shields, radar and life support, including their power-range modifiers. Weapon consumption is capped at actual fractional gun demand; unused capacity in the last integer weapon pip does not produce heat. Insufficient power or cooling makes a candidate infeasible. This is not a physical thermal simulation, damage network or relay simulation.
 
 Three deterministic allocation policies are searched:
 
@@ -44,7 +46,7 @@ These policies do not enumerate every legal pip allocation. The evaluate API als
 
 ## Signatures
 
-Power-plant EM scales with total allocated power relative to total available power. Consumer EM scales with allocation and exported power-range modifiers. Armor EM multipliers are applied. Estimated IR is summed nominal component IR times cooling utilization, then the armor IR multiplier. Cross-section is exported per axis and shown separately.
+Power-plant EM scales with consumed power relative to total available power. Consumption excludes unused capacity in the last integer weapon pip. Consumer EM scales with allocation and exported power-range modifiers. All gun EM, including ballistics, scales with `allocated_weapon_pips / ceil(total_rated_gun_power)`, capped at one. This signature fraction uses whole pips, while capacitor capacity/recharge uses fractional rated demand. Armor EM multipliers are applied. Estimated IR is summed nominal component IR times cooling utilization, then the armor IR multiplier. Cross-section is exported per axis and shown separately.
 
 These are **steady-state estimates**. Ambient temperature, transient heat, weapon firing, thrust, boost, receiver sensitivity and aspect-dependent detection are not simulated. No detection-distance claim is made. The stealth score minimizes `max(EM, IR)`; it does not minimize cross-section, so compare cross-section separately when choosing different ships.
 

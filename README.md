@@ -2,7 +2,7 @@
 
 An independent, local Star Citizen loadout optimizer, intended to power a free tool on **concrete-foundry.com**. This repository contains the browser workbench, calculation/search engine, optional command-line interface and local JSON API.
 
-**Version 0.1 is experimental.** It finds promising builds under an explicit approximation of SCM combat. It is not an in-game validated simulator, an erkul clone, or a guarantee of the best possible loadout. Read [the model and its limits](docs/model.md) before treating a recommendation as a purchase decision.
+**Version 0.1 is experimental.** It finds promising builds under an explicit approximation of SCM combat. It is not an in-game validated simulator, an erkul clone, or a guarantee of the best possible loadout. Read [the model and its limits](docs/model.md) before treating a recommendation as a purchase decision. The [same-build Meteor comparison](verification/meteor-erkul-12913470.md) documents the corrected damage/signature model and its current validation scope.
 
 ## Start on Windows
 
@@ -90,13 +90,15 @@ This runs in the foreground at `http://127.0.0.1:8765`. Stop with Ctrl+C. `Start
 
 ## Data updates and provenance
 
-Game data comes from [StarCitizenWiki/scunpacked-data](https://github.com/StarCitizenWiki/scunpacked-data), generated with [ScDataDumper](https://github.com/octfx/ScDataDumper). No erkul endpoints, scripts, UI or assets are used. Two public bulk JSON files are cached under an immutable revision, checksummed and activated only after validation. FleetYards reference prices, shop listings and dock classes are cached separately, matched by exact game class identifier. Network access occurs during game-data sync, the launcher's initial setup, or an explicit market refresh in the UI. Searches use the local caches.
+Game data can come from [StarCitizenWiki/scunpacked-data](https://github.com/StarCitizenWiki/scunpacked-data), generated with [ScDataDumper](https://github.com/octfx/ScDataDumper), or a complete export of a locally installed client. No erkul endpoints, scripts, UI or assets are used. Snapshots are checksummed and activated only after validation. Local imports also retain raw firing-sequence timing, the installed build manifest, extracted database hash and exporter revision. The UI shows the active source and version. See [local extraction details](docs/data-sources.md#local-client-extraction). FleetYards reference prices, shop listings and dock classes are cached separately, matched by exact game class identifier. Searches use the local caches.
 
 ```powershell
 python -m citizensolver sync --revision latest
 ```
 
 `latest` resolves the repository head to a commit SHA and records its commit-message build label. This may change the source schema or game mechanics; compare saved results and revalidate the model before using a new patch. A full SHA and `--version` can select another snapshot. The checksums detect accidental local corruption; they do not certify the upstream data's accuracy.
+
+Public sync replaces the active snapshot, including a newer local import. The pinned public export currently lacks sequence timing; such guns are explicitly unsupported until imported with their full records. A newer version label alone never upgrades older data.
 
 Raw game data and imagery are not included in this Git repository. See [data and attribution notes](docs/data-sources.md), including the remaining checks before public hosting.
 

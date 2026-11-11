@@ -36,6 +36,11 @@ def parser():
     download = sub.add_parser("sync", help="Download a pinned public game-data snapshot")
     download.add_argument("--revision", default=DEFAULT_REVISION, help="Commit SHA or latest")
     download.add_argument("--version", help="Build label for a custom SHA")
+    local = sub.add_parser("import-local", help="Import an extracted local game catalogue (see docs/data-sources.md)")
+    local.add_argument("export_folder", type=Path)
+    local.add_argument("game_folder", type=Path)
+    local.add_argument("unpacked_folder", type=Path)
+    local.add_argument("--exporter-revision", required=True)
     listing = sub.add_parser("ships", help="List ship class ids")
     listing.add_argument("--role")
     components = sub.add_parser("components", help="List modeled ports and compatible components")
@@ -114,6 +119,11 @@ def main(argv=None):
     try:
         if args.command == "sync":
             result = sync(args.data, args.revision, args.version)
+            print(json.dumps(result, indent=2))
+            return 0
+        if args.command == "import-local":
+            from .local_import import import_local
+            result = import_local(args.export_folder, args.game_folder, args.unpacked_folder, args.exporter_revision, args.data)
             print(json.dumps(result, indent=2))
             return 0
         catalogue = Catalogue(args.data)

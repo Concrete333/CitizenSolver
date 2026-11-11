@@ -4,9 +4,24 @@ CitizenSolver is an independent application. It does not use erkul's private bac
 
 The initial dataset is [StarCitizenWiki/scunpacked-data](https://github.com/StarCitizenWiki/scunpacked-data), revision [1340c8303709904165e2da0fa7060bce0624260b](https://github.com/StarCitizenWiki/scunpacked-data/commit/1340c8303709904165e2da0fa7060bce0624260b), labeled `4.10.2-LIVE.12881860`. `ships.json` contains full exported ship records; `ship-items.json` supplies standardized component records. Both are downloaded by the user and stored locally, outside Git.
 
-The exporter is [octfx/ScDataDumper](https://github.com/octfx/ScDataDumper), whose package metadata declares MIT. Its exported schema and documented calculations informed the importer and model. Its software license does not, by itself, license underlying CIG game data or imagery. No exporter software is installed or executed by CitizenSolver.
+The exporter is [octfx/ScDataDumper](https://github.com/octfx/ScDataDumper), whose package metadata declares MIT. Its exported schema and documented calculations informed the importer and model. Its software license does not, by itself, license underlying CIG game data or imagery. The application does not automatically install or run the exporter; local extraction is a separate developer step.
 
 Game content and trademarks belong to their respective owners. CitizenSolver is an unofficial fan project and is not affiliated with or endorsed by Cloud Imperium Games or Roberts Space Industries.
+
+## Local client extraction
+
+The installed LIVE client on 11 November 2026 has `RequestedP4ChangeNum=12913470`, branch `sc-alpha-4.10.2`, executable version `4.10.197.2878` and build ID `2cae0dfc-a941-4dcc-b82a-543b08b52d97`. This matches erkul's displayed `4.10.2-LIVE.12913470`. The public standardized dataset above had not yet advanced to that build, so the comparison uses a fresh local extraction, not a relabeled public snapshot.
+
+Developer reproduction (the workbench itself still requires no commands):
+
+1. Read the installed channel's `build_manifest.id`; extract `*.xml`, `*.ini` and `*.socpak` from that same installation's `Data.p4k` into an ignored local directory with [unp4k v4.0.87](https://github.com/dolkensp/unp4k/releases/tag/v4.0.87). The XML filter also extracts `Data/Game2.dcb`.
+2. Convert the database and binary XML with unforge. The local v4.0.87 source build used `MemoryStream(File.ReadAllBytes(path))` instead of `File.OpenRead(path)` for the database input to avoid slow random disk reads, and `File.Create` instead of `File.OpenWrite` for complete output replacement. Parsing rules were unchanged. This release writes individual database records, rather than a monolithic `Game2.xml`.
+3. Use [ScDataDumper commit 120a728](https://github.com/octfx/ScDataDumper/tree/120a728639bdd1b06525a0f8574cb0e91d0fbf8d) with PHP 8.5.12 and its Composer lockfile. Run `generate:cache`, `load:items` and `load:vehicles` against the converted directory. On Windows, normalize cached paths to forward slashes before the `VehicleService::initialize` spaceship/ground-vehicle/actor directory filters: the cache contains `/` even though `DIRECTORY_SEPARATOR` is `\\`. Without this exporter fix, it exports zero vehicles. Keep the individual `items/*.json` raw records as well as `ships.json` and `ship-items.json`. The cache scans the individual records; a missing monolithic `Game2.xml` message from this exporter is expected with this unforge version, but completeness must be checked in the resulting catalogue.
+4. Activate the complete export with `python -m citizensolver import-local <export-folder> <installed-LIVE-folder> <unpacked-folder> --exporter-revision 120a728639bdd1b06525a0f8574cb0e91d0fbf8d`. Restart the local CitizenSolver server after activation.
+
+`import-local` derives the version from the installed build manifest and channel folder. It records the manifest, extracted database SHA-256, exporter commit, snapshot checksums and hashes of the raw sequence records. The local snapshot ID is a content-derived SHA-1 identifier, not a Git commit. Activation follows schema/checksum validation, so a failed import keeps the previous active manifest. Raw records supply the sequence entries omitted by the standard export; no erkul scripts or backend data are imported. The extraction and export must actually come from that client: supplying a different build manifest cannot prove arbitrary JSON has that provenance.
+
+Extraction tools, game files, raw captures and generated catalogues remain under ignored `data/`. Only our importer, calculation changes, synthetic tests and verification documentation are committed.
 
 ## Price and hangar records
 

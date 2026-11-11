@@ -6,11 +6,11 @@ import math
 
 from .catalogue import kind, walk_ports
 
-MODEL_VERSION = "scm-estimate-1"
+MODEL_VERSION = "scm-estimate-2"
 ASSUMPTIONS = [
-    "Experimental model; not validated against in-game measurements or erkul.",
+    "Experimental model; selected Meteor fits calibrated against erkul on 4.10.2-LIVE.12913470, not validated in game.",
     "SCM, stationary, undamaged, fixed weapons, primary firing mode, all shots hit; no armor/penetration simulation.",
-    "Energy ammunition uses exported per-weapon capacitor limits; recharge scales with power remaining after ballistic demand. Ship capacitor buffs are not available in this import.",
+    "Energy capacitor capacity and recharge scale with the weapon group's allocated power divided by its total rated demand. Ship capacitor buffs and synchronized firing groups are not simulated.",
     "EM/IR are steady-state estimates, not detection distances or transient firing/boost signatures.",
     "Flight rates are exported blade ratings; power-dependent handling and atmospheric flight are not simulated.",
     "Catalogue compatibility does not establish shop availability or ownership; crafted quality and attachment customization are excluded.",
@@ -48,17 +48,48 @@ def powered_fraction(item, allocated):
     return min(1.0, allocated / maximum) if maximum else 1.0
 
 
-def _finite_damage(alpha, rate, shots, downtime, duration, ammo=None):
+def firing_rate(mode):
+    """Shots/second, including the delays between a repeating sequence's actions."""
+    if mode.get("FireType") != "sequence":
+        return number(mode.get("RoundsPerMinute")) / 60
+    entries = mode.get("SequenceEntries") or []
+    if mode.get("SequenceMode") not in {"Looping", "Automatically"} or not entries:
+        raise ModelError("Sequence timing is missing or unsupported; import complete local records")
+    shots = seconds = 0
+    payload = None
+    for entry in entries:
+        if entry.get("FireType") != "single":
+            raise ModelError("Only single-shot actions in repeating sequences are modeled")
+        signature = tuple(entry.get(k) for k in ("AmmoPerShot", "PelletsPerShot", "ProjectileType", "DamageMultiplier", "HeatPerShot"))
+        if payload is not None and signature != payload:
+            raise ModelError("Mixed projectiles or damage within a sequence are not modeled")
+        payload = signature
+        delay, repeats = number(entry.get("Delay")), entry.get("Repetitions")
+        if delay <= 0 or type(repeats) is not int or repeats <= 0:
+            raise ModelError("Invalid sequence delay or repetition count")
+        if entry.get("Unit") == "RPM":
+            interval = 60 / delay
+        elif entry.get("Unit") == "Seconds":
+            interval = delay
+        else:
+            raise ModelError("Unsupported sequence delay unit")
+        shots += repeats
+        seconds += interval * repeats
+    return shots / seconds
+
+
+def _finite_damage(alpha, rate, shots, downtime, duration, ammo=None, firing_seconds=None):
     """Continuous firing windows, explicit full recharge/overheat pauses, finite ammo cap."""
     if rate <= 0 or shots <= 0:
         return 0.0
     if math.isinf(shots):
         count = duration * rate
     else:
-        firing = shots / rate
+        firing = shots / rate if firing_seconds is None else firing_seconds
         cycle = firing + downtime
         cycles = math.floor(duration / cycle)
-        count = cycles * shots + min(shots, max(0, duration - cycles * cycle) * rate)
+        remainder = max(0, duration - cycles * cycle)
+        count = cycles * shots + (shots if remainder >= firing else min(shots, remainder * rate))
     if ammo is not None:
         count = min(count, ammo)
     return max(0.0, count * alpha)
@@ -72,7 +103,7 @@ def weapon_stats(item, power_ratio=1.0, duration=120.0):
     mode = modes[0]
     if mode.get("FireType") not in {"single", "rapid", "sequence"} or mode.get("ShotCount", 1) != 1:
         raise ModelError(f"Unsupported primary fire mode: {item.get('Name')}")
-    rate = number(mode.get("RoundsPerMinute")) / 60
+    rate = firing_rate(mode)
     ammo_cost = number(mode.get("AmmoPerShot"), 1)
     if rate <= 0 or ammo_cost <= 0:
         raise ModelError(f"Missing firing rate/ammunition cost: {item.get('Name')}")
@@ -85,10 +116,12 @@ def weapon_stats(item, power_ratio=1.0, duration=120.0):
     heat = weapon.get("Heat") or {}
     ammo = None
     shots = math.inf
+    firing_seconds = None
     cooldown = 0.0
     if cap:
-        load = number(cap.get("MaxAmmoLoad"))
-        regen = number(cap.get("MaxRegenPerSec")) * max(0.0, min(1.0, power_ratio))
+        fraction = max(0.0, min(1.0, power_ratio))
+        load = math.floor(number(cap.get("MaxAmmoLoad")) * fraction + .5)
+        regen = number(cap.get("MaxRegenPerSec")) * fraction
         if load <= 0 or regen <= 0:
             raise ModelError(f"No powered capacitor data: {item.get('Name')}")
         shots = math.floor(load / ammo_cost)
@@ -100,24 +133,31 @@ def weapon_stats(item, power_ratio=1.0, duration=120.0):
             raise ModelError(f"Unknown finite ammunition: {item.get('Name')}")
         ammo = math.floor(capacity / ammo_cost)
     heat_shots = number(heat.get("ShotsToOverheat"))
+    if number(heat.get("HeatPerShot")) > 0 and number(heat.get("OverheatTemperature")) > 0:
+        heat_shots = number(heat["OverheatTemperature"]) / number(heat["HeatPerShot"])
     if heat_shots > 0 and heat_shots <= shots:
-        shots = heat_shots
+        # The shot that crosses the thermal threshold still deals damage.
+        # Keep the continuous threshold time separate from the whole shot count.
+        shots = math.ceil(heat_shots)
+        firing_seconds = heat_shots / rate
         # Conservatively allow recharge and heat recovery concurrently after firing stops.
         recharge = (number(cap.get("Cooldown")) + shots * ammo_cost /
                     (number(cap.get("MaxRegenPerSec")) * power_ratio)) if cap else 0
         cooldown = max(number(heat.get("OverheatFixTime")), recharge)
     burst = alpha * rate
-    sustained = burst if math.isinf(shots) else alpha * shots / (shots / rate + cooldown)
+    if firing_seconds is None and not math.isinf(shots):
+        firing_seconds = shots / rate
+    sustained = burst if math.isinf(shots) else alpha * shots / (firing_seconds + cooldown)
     distortion = damage["Distortion"]
-    finite = _finite_damage(alpha, rate, shots, cooldown, duration, ammo)
-    fired = _finite_damage(1, rate, shots, cooldown, duration, ammo)
-    return {"name": item["Name"], "id": item["ClassName"], "alpha": alpha,
+    finite = _finite_damage(alpha, rate, shots, cooldown, duration, ammo, firing_seconds)
+    fired = _finite_damage(1, rate, shots, cooldown, duration, ammo, firing_seconds)
+    return {"name": item["Name"], "id": item["ClassName"], "alpha": alpha, "rounds_per_minute": rate * 60,
             "burst_dps": burst, "sustained_dps": sustained,
             "distortion_alpha": distortion, "distortion_burst_dps": distortion * rate,
             "damage_over_duration": finite, "distortion_over_duration": fired * distortion,
             "duration_dps": finite / duration, "energy": bool(cap),
             "shots_per_cycle": None if math.isinf(shots) else shots,
-            "fire_seconds": None if math.isinf(shots) else shots / rate,
+            "fire_seconds": firing_seconds,
             "recovery_seconds": cooldown, "ammunition_shots": ammo,
             "ammo_trigger_seconds": ammo / rate if ammo is not None else None,
             "projectile_speed_m_s": (item.get("Ammunition") or {}).get("Speed"),
@@ -213,12 +253,17 @@ class ShipModel:
             limits["weapons"] = (1, max(1, math.ceil(min(raw_weapons, pool))))
         return limits
 
+    @staticmethod
+    def consumed_power(items, pips):
+        weapon_demand = sum(usage(i) for i in items.values() if kind(i) == "WeaponGun")
+        return sum(pips.values()) - max(0, pips.get("weapons", 0) - weapon_demand)
+
     def cooling(self, items, pips):
         available = sum(number(network(i).get("Generation", {}).get("Coolant")) *
                         powered_fraction(i, pips.get(k, 0)) * modifier(i, pips.get(k, 0))
                         for k, i in items.items() if kind(i) == "Cooler")
-        used = sum(pips.values())
-        extra = sum(usage(i, "Coolant") * powered_fraction(i, pips.get(k, 0))
+        used = self.consumed_power(items, pips)
+        extra = sum(usage(i, "Coolant") * powered_fraction(i, pips.get(k, 0)) * modifier(i, pips.get(k, 0))
                     for k, i in items.items() if kind(i) in {"Shield", "Radar", "LifeSupportGenerator"})
         return used + extra, available
 
@@ -282,21 +327,23 @@ class ShipModel:
         guns = [i for i in items.values() if kind(i) == "WeaponGun"]
         ballistic_demand = sum(usage(i) for i in guns if not (i.get("Weapon") or {}).get("Capacitor"))
         energy_demand = sum(usage(i) for i in guns if (i.get("Weapon") or {}).get("Capacitor"))
-        weapon_ratio = min(1, max(0, pips.get("weapons", 0) - ballistic_demand) / energy_demand) if energy_demand else 1
+        weapon_demand = ballistic_demand + energy_demand
+        weapon_ratio = min(1, pips.get("weapons", 0) / weapon_demand) if weapon_demand else 1
+        weapon_em_ratio = min(1, pips.get("weapons", 0) / math.ceil(weapon_demand)) if weapon_demand else 1
         if ballistic_demand > pips.get("weapons", 0):
             violations.append("Insufficient power for ballistic weapons")
         weapons = [{**self._weapon_cached(i["ClassName"], round(weapon_ratio, 8), duration), "port": k}
                    for k, i in items.items() if kind(i) == "WeaponGun"]
         shield_hp = shield_regen = em = ir_nominal = 0.0
         plants_em = sum(emission(i) for i in items.values() if kind(i) == "PowerPlant")
-        em += plants_em * used / available if available else 0
+        em += plants_em * self.consumed_power(items, pips) / available if available else 0
         flight = self.ship.get("FlightCharacteristics") or {}
         rates = flight.get("AngularRates", {})
         boosted = flight.get("AngularRatesBoosted", {})
         speed = flight.get("Speeds", {})
         for key, item in items.items():
             typ = kind(item)
-            ratio = (weapon_ratio if (item.get("Weapon") or {}).get("Capacitor") else 1) if typ == "WeaponGun" else powered_fraction(item, pips.get(key, 0))
+            ratio = weapon_em_ratio if typ == "WeaponGun" else powered_fraction(item, pips.get(key, 0))
             if typ != "PowerPlant":
                 em += emission(item) * ratio * modifier(item, pips.get(key, 0))
             ir_nominal += number((item.get("Emission") or {}).get("Ir"))
@@ -330,7 +377,7 @@ class ShipModel:
                 "metrics": metrics, "weapons": weapons,
                 "flight": {"rated": rates, "boosted_rated": boosted, "speeds_m_s": speed},
                 "cross_section": self.ship.get("CrossSection"),
-                "power": {"available": available, "used": used, "allocation": pips, "bounds": bounds},
+                "power": {"available": available, "used": used, "consumed": self.consumed_power(items, pips), "allocation": pips, "bounds": bounds},
                 "cooling": {"demand": cooling_load, "available": cooling_output},
                 "loadout": [{"port": k, "hardpoint": self.ports[k][0]["HardpointName"],
                              "path": self.ports[k][0].get("Path", [self.ports[k][0]["HardpointName"]]), "size": i.get("Size"),

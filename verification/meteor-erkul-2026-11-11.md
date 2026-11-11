@@ -1,5 +1,7 @@
 # Meteor damage / stealth comparison — 11 November 2026
 
+> Follow-up: the discrepancies below were resolved for these Meteor fits in the [same-build recalibration](meteor-erkul-12913470.md). This report preserves the original failed comparison.
+
 **Result: partial agreement; damage and signature predictions do not pass validation.**
 
 The same equipment and power allocation were entered in erkul's public calculator. Alpha damage, shields, hull, armor and base flight ratings agree. CitizenSolver overstates burst DPS by **17.2%** and sustained DPS by **16.9%**. Its EM/IR estimates are also higher. This does not establish that the recommended fit is optimal or that either calculator matches the game.
