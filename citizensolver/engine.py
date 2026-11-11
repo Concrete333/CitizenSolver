@@ -161,7 +161,8 @@ def weapon_stats(item, power_ratio=1.0, duration=120.0):
             "recovery_seconds": cooldown, "ammunition_shots": ammo,
             "ammo_trigger_seconds": ammo / rate if ammo is not None else None,
             "projectile_speed_m_s": (item.get("Ammunition") or {}).get("Speed"),
-            "range_m": weapon.get("EffectiveRange"), "power_ratio": power_ratio}
+            "range_m": weapon.get("EffectiveRange"), "pellets_per_shot": mode.get("PelletsPerShot"),
+            "power_ratio": power_ratio}
 
 
 class ShipModel:

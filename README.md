@@ -14,6 +14,8 @@ With Python 3.11 or newer installed, double-click **Open CitizenSolver.vbs** (or
 4. Optionally enter ship budgets in USD reference prices and/or aUEC. Both entered limits must be met. Require an in-game shop listing or set the maximum hangar class. Unknown prices/fit cannot pass an active filter. These are **ship-only** prices; component costs are not included.
 5. Press **Find my fits**. Expand a result for equipment, actual modeled pips, additional stats and assumptions. Save a build or the whole search with the download buttons.
 
+Set **Minimum gun reach** beside the goal to require every pilot gun to reach your chosen distance. Results show grouped weapon DPS, listed reach and pellet count. Scattergun damage assumes every pellet hits; listed reach is not a guarantee of useful full damage at that distance. Blank leaves range unrestricted.
+
 “Keep at least 90% of damage” means retaining at least 90% of the best feasible engagement DPS found for that ship. It is a minimum-damage constraint used by the dedicated stealth/balanced goals, separate from preference weights. It does not promise 90% of a globally optimal or real in-game build.
 
 Cargo, hull and armor are largely fixed hull traits. Stealth and flight values remain experimental. See [model details](docs/model.md) and [price / hangar provenance](docs/data-sources.md).

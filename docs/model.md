@@ -77,7 +77,7 @@ These are explicit preference scores, not physical units. PvE gives handling les
 
 For stealth and balanced, `damage_floor` retains at least that fraction of the highest finite-duration DPS among feasible candidates found that meet the hard constraints. Default 0.9. This is relative to this search, not a proven theoretical maximum. In cross-ship comparisons the floor applies separately to each ship.
 
-`min_range` and `min_velocity` require every installed pilot gun to meet the threshold. They do not estimate hit probability. Collector and special equipment may be compatible but unobtainable; the source has no trusted availability contract here, and all results disclose this.
+`min_range` and `min_velocity` require every installed pilot gun to meet the threshold. They do not estimate hit probability. The browser exposes Minimum gun reach beside the goal and lists grouped gun DPS, nominal reach and pellets per shot. A multi-pellet fit explicitly warns that spread can reduce damage before the range limit. No distance-dependent damage curve or target-size/spread model is implied; a blank range constraint leaves short-range guns eligible. Collector and special equipment may be compatible but unobtainable; the source has no trusted availability contract here, and all results disclose this.
 
 ### Browser priority budget
 

@@ -200,6 +200,19 @@ class Models(unittest.TestCase):
         self.assertTrue(a["search"]["evaluation_limit_reached"])
         self.assertEqual(a["results"], b["results"])
 
+    def test_range_requirement_replaces_high_damage_short_range_gun(self):
+        cannon = self.catalogue.items["cannon"]
+        cannon["Ammunition"]["Capacity"] = 2000
+        cannon["Weapon"]["EffectiveRange"] = 500
+        cannon["Weapon"]["Modes"][0].update(AlphaPhysical=1000, PelletsPerShot=8)
+        close = optimize(self.catalogue, self.ship, Search(goal="damage", min_range=500, limit=1))
+        ranged = optimize(self.catalogue, self.ship, Search(goal="damage", min_range=1500, limit=1))
+        self.assertEqual(close["results"][0]["weapons"][0]["id"], "cannon")
+        self.assertEqual(close["results"][0]["weapons"][0]["pellets_per_shot"], 8)
+        self.assertEqual(ranged["results"][0]["weapons"][0]["id"], "laser")
+        self.assertGreater(close["results"][0]["metrics"]["sustained_dps"], ranged["results"][0]["metrics"]["sustained_dps"])
+        self.assertTrue(all(w["range_m"] >= 1500 for w in ranged["results"][0]["weapons"]))
+
     def test_invalid_search_inputs(self):
         for values in ({"beam": 0}, {"duration": math.nan}, {"damage_floor": 2}, {"goal": "unknown"}, {"min_dps": -1}):
             with self.assertRaises(ValueError):

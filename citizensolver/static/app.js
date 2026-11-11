@@ -137,6 +137,18 @@ function metricHTML(metrics, [key,label,unit,lower], baseline) {
   }
   return `<div class="metric"><label>${label}</label><strong>${number(value,1)}<span class="unit">${unit}</span></strong>${delta}</div>`;
 }
+function weaponReachHTML(weapons, minimum) {
+  if (!weapons?.length) return '';
+  const groups = new Map();
+  for (const weapon of weapons) {
+    const group = groups.get(weapon.id) || {...weapon, count:0, burst:0, sustained:0};
+    group.count++; group.burst += weapon.burst_dps; group.sustained += weapon.sustained_dps;
+    groups.set(weapon.id, group);
+  }
+  const rows = [...groups.values()].map(w => `<tr><td>${w.count} × ${escapeHTML(w.name)}</td><td>${number(w.range_m)} m</td><td>${number(w.burst,1)}</td><td>${number(w.sustained,1)}</td><td>${number(w.pellets_per_shot)}</td></tr>`).join('');
+  const spread = weapons.some(w => w.pellets_per_shot > 1);
+  return `<section class="fit-details weapon-reach" aria-label="Damage and weapon reach"><strong>Damage & weapon reach</strong><p>${minimum ? `Every gun must reach at least ${number(minimum)} m.` : 'Any range allowed in this search.'} DPS below is the total for each weapon group, assuming all shots hit.</p><div class="table-wrap"><table><thead><tr><th>Weapons</th><th>Listed reach</th><th>Burst DPS</th><th>Repeating DPS</th><th>Pellets / shot</th></tr></thead><tbody>${rows}</tbody></table></div><p>${spread ? '<strong>Scattergun trade-off:</strong> full damage requires every pellet to hit. Spread can reduce damage well before the listed reach. ' : ''}Listed reach is a range limit, not a full-damage guarantee. Target size, spread and hit probability are not modeled.</p></section>`;
+}
 function resultHTML(r, index, report) {
   const m = r.metrics, market = r.market || {}, cargoOnly = r.kind === 'ship';
   const scoreText = report.goal === 'custom' ? `${number(r.score*100,1)}` : report.goal === 'cargo' ? number(m.cargo_scu) : '';
@@ -150,6 +162,7 @@ function resultHTML(r, index, report) {
   return `<article class="panel fit-card"><div class="fit-top"><div><p class="eyebrow">FIT ${String(index+1).padStart(2,'0')} / ${index===0?'HIGHEST RANKED FOUND':'ALTERNATIVE'}</p><h3>${escapeHTML(r.ship.name)}</h3><div class="role">${escapeHTML(r.ship.role)} · ${cargoOnly?'Cargo comparison':'Optimized equipment · pilot guns'}</div></div>${scoreText?`<div class="fit-score"><strong>${scoreText}</strong><span>${scoreLabel}</span></div>`:''}</div>
     <div class="price-strip"><span>${price}</span><span>${auec}</span><span>${market.hangar ? escapeHTML(market.hangar)+' hangar class' : 'Hangar fit unknown'}</span></div>
     <div class="metric-grid">${displayMetrics.map(d => metricHTML(m,d,baseline)).join('')}</div>
+    ${cargoOnly ? '' : weaponReachHTML(r.weapons, report.request.search.min_range)}
     ${cargoOnly?'':`<details class="fit-details"><summary>Equipment & power allocation · ${Object.keys(r.swaps).length} changed ports</summary><p>Power: ${r.power.used} / ${r.power.available} pips · Cooling: ${number(r.cooling.demand,1)} / ${number(r.cooling.available,1)} modeled units. Priority percentages above are preferences, not these equipment pips.</p><div class="table-wrap"><table><thead><tr><th>Mount / port</th><th>Component</th><th>Type</th><th>Pips</th></tr></thead><tbody>${loadout}</tbody></table></div><div class="pip-list"><span class="pip-chip">Shared weapons: ${pips.weapons ?? 0} pips</span></div><p>Only supported powered components are listed. Other mounts stay stock; shop availability of these components is not verified.</p></details><details class="fit-details"><summary>More stats & ranking breakdown</summary><div class="metric-grid">${extraStats.map(d=>metricHTML(m,d,baseline)).join('')}</div><p>¹ Repeating DPS before ballistic ammunition runs out. Engagement DPS accounts for the selected ${r.scenario.duration_seconds}-second duration. All damage assumes hits; distortion is reported separately in the saved build.</p>${r.priority_scores?`<div class="table-wrap"><table><thead><tr><th>Priority</th><th>Your weight</th><th>Stat score / 100</th><th>Points earned</th></tr></thead><tbody>${Object.entries(r.priority_scores).map(([k,v])=>`<tr><td>${definitions[k][0]}</td><td>${report.request.search.weights[k]}%</td><td>${number(v,1)}</td><td>${number(v*report.request.search.weights[k]/100,1)}</td></tr>`).join('')}</tbody></table></div>`:''}</details>`}
     <details class="fit-details"><summary>Assumptions & source details</summary>${(r.assumptions || []).map(s=>`<p>${escapeHTML(s)}</p>`).join('')}<p>Hull and armor ratings do not predict damage to destruction. Hangar fit: ${escapeHTML(market.hangar_basis || 'Not known')} USD prices are reference values, not a current purchase offer. In-game prices are cached shop listings; check them in game before buying.</p><p>FleetYards record updated: ${escapeHTML(market.updated_at || 'unknown')}. Cache downloaded: ${escapeHTML(report.market_downloaded_at || 'not downloaded')}.</p>${(market.locations||[]).map(p=>`<p>${escapeHTML(p.name)} · ${number(p.price)} aUEC · ${escapeHTML(p.updated_at || 'date unknown')}</p>`).join('')}</details>
     <div class="fit-actions"><span>${cargoOnly?'Exported cargo capacity':'Best found in a bounded search · experimental'}</span><button type="button" class="quiet" data-save="${index}">↓ Save ${cargoOnly?'ship':'build'}</button></div></article>`;
