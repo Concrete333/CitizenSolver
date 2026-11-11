@@ -4,7 +4,9 @@ The offline suite uses only synthetic fixture data and temporary directories. It
 
 On 11 November 2026, the initial 22-test Windows run passed in 0.606 seconds on Python 3.13.17. Slowest: HTTP integration 0.548 seconds; save/replay 0.015 seconds; bounded search 0.007 seconds. Local verification logs retain later run timings and are ignored by Git.
 
-Development smoke checks used the pinned public 4.10.2 snapshot: stock Meteor evaluation, optimized Meteor builds, medium-fighter comparisons and saved-build replay. These prove the pipeline runs; they do not establish in-game numerical accuracy. In-game validation and same-build manual erkul comparisons have not been completed.
+Development smoke checks used the pinned public 4.10.2 snapshot: stock Meteor evaluation, optimized Meteor builds, medium-fighter comparisons and saved-build replay. These prove the pipeline runs; they do not establish in-game numerical accuracy. In-game validation and same-patch manual erkul comparisons have not been completed.
+
+The [11 November Meteor comparison](meteor-erkul-2026-11-11.md) matched the recommended 50% firepower / 50% stealth fit and eight-pip allocation in erkul. Alpha, shields, hull, armor and base flight ratings agreed; CitizenSolver overstated burst DPS by 17.2% and sustained DPS by 16.9%, with higher EM/IR estimates. Echion firing rate, low-power capacitor load and weapon signature scaling differed. Erkul used a newer 4.10.2 build, so this records a failed cross-calculator accuracy check rather than a same-patch or in-game validation. The report documents the exact loadout, versions, evidence and unresolved causes.
 
 The browser-workbench update on 11 November passed 30 Windows tests in 1.148 seconds. Slowest: existing HTTP integration 0.536 s; browser-assets/background-search integration 0.522 s; save/replay 0.015 s. Python compilation and JavaScript syntax passed. The Node priority test exercised 808 sequential edits, endpoints and rounding, retaining exactly 100%.
 

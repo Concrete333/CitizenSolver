@@ -14,7 +14,7 @@
 
 ## Next
 
-1. Validate exact-build stock and changed Meteor fits against measured game behavior. Resolve ship capacitor buffs/pools, current flight curves, component modifiers and thermal/signature formulas before claiming accurate optimization.
+1. Resolve the [Meteor comparison discrepancies](../verification/meteor-erkul-2026-11-11.md): Echion sequence firing (800 vs 527 RPM), low-power capacitor load/recharge (225 vs 80 shots), ballistic weapon EM scaling and coolant demand/IR. Establish a shared game revision, then re-run the recommendation and compare the resulting fit. Validate stock and changed fits against measured game behavior; also resolve ship capacitor buffs/pools, flight curves and component modifiers before claiming accurate optimization.
 2. Add a validated firing scheduler (shared energy capacity, fire groups, spin-up/charged modes), target range/hit assumptions, armor and penetration. Preserve distinction between distortion and hull damage.
 3. Establish current player/shop availability, ownership and crafted-quality data rather than assuming every compatible record is obtainable.
 4. Add natural-language requests translated into visible, editable goals and constraints. Never let generated text supply uncomputed stats.
