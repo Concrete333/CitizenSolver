@@ -220,3 +220,11 @@ to{opacity:1;transform:translateY(0)}
 
 .priority-action{display:flex;justify-content:flex-end;margin-top:20px}
 .priority-action .primary{max-width:240px}
+.selected-fit{border-color:var(--accent);margin:20px 0 30px;scroll-margin-top:20px}
+.selected-fit a{color:var(--accent)}
+.selected-fit p{line-height:1.7}
+.editor-table select{min-width:240px;max-width:400px}
+.editor-table small{display:block;color:var(--muted)}
+.editor-actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:16px}
+.matchup-note{margin:20px}
+.fit-actions{flex-wrap:wrap}

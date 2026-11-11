@@ -6,10 +6,11 @@ import math
 import time
 
 from .engine import ModelError, ShipModel
+from .equipment import offers_for
 
 GOALS = ("damage", "burst", "alpha", "stealth", "balanced", "pve", "pvp", "shields", "shield_regen", "handling", "speed", "scm_speed", "custom")
 PRIORITIES = {"firepower": ("duration_dps", 1500), "shields": ("shield_hp", 10000),
-              "stealth": ("signature", 10000), "handling": ("handling", 60),
+              "stealth": ("signature", 10000), "handling": ("maneuverability_score", 1),
               "speed": ("max_speed", 1000), "hull": ("hull_hp", 20000),
               "armor": ("armor_hp", 10000), "cargo": ("cargo_scu", 100)}
 
@@ -32,8 +33,16 @@ class Search:
     max_ir: float | None = None
     max_evaluations: int = 15000
     weights: dict = field(default_factory=lambda: {"firepower": 50, "stealth": 50})
+    equipment_mode: str = "best"
+    locks: dict = field(default_factory=dict)
+    seed_swaps: dict = field(default_factory=dict)
 
     def __post_init__(self):
+        if self.equipment_mode not in {"best", "shop"}:
+            raise ValueError("Equipment mode must be best or shop")
+        for choices in (self.locks, self.seed_swaps):
+            if not isinstance(choices, dict) or any(not isinstance(k, str) or not isinstance(v, str) for k, v in choices.items()):
+                raise ValueError("Equipment choices must map port ids to component ids")
         if self.goal not in GOALS:
             raise ValueError(f"Goal must be one of {GOALS}")
         for name, low, high in (("beam", 3, 24), ("passes", 1, 4), ("limit", 1, 50), ("max_evaluations", 10, 100000)):
@@ -54,7 +63,8 @@ class Search:
 
 def score(metrics, goal, weights=None):
     dps = metrics["duration_dps"]
-    signature = max(metrics["em"], metrics["ir"] or 0)
+    signature = metrics.get("signature")
+    signature = signature if signature is not None else math.inf
     if goal == "custom":
         return sum(weight / 100 * utility(metrics, key) for key, weight in weights.items() if weight)
     if goal == "damage":
@@ -70,29 +80,28 @@ def score(metrics, goal, weights=None):
     if goal == "shield_regen":
         return metrics["shield_regen"]
     if goal == "handling":
-        return metrics["handling"] or 0
+        return metrics.get("maneuverability_score") or 0
     if goal in {"speed", "scm_speed"}:
         return metrics["max_speed" if goal == "speed" else "scm_speed"] or 0
     if goal == "pvp":
         # Bounded utility terms keep handling dominant regardless of raw stat scale.
-        handling = (metrics["handling"] or 0) / ((metrics["handling"] or 0) + 60)
+        handling = metrics.get("maneuverability_score") or 0
         damage = dps / (dps + 1500)
         shield = metrics["shield_hp"] / (metrics["shield_hp"] + 5000)
         return .75 * handling + .20 * damage + .05 * shield
     if goal == "pve":
         # Explicit fixed units prevent the cohort changing the meaning of the score.
-        return .7 * dps / 1000 + .25 * metrics["shield_hp"] / 10000 + .05 * (metrics["pitch"] or 0) / 100
+        return .7 * dps / 1000 + .25 * metrics["shield_hp"] / 10000 + .05 * (metrics.get("maneuverability_score") or 0)
     return dps / (1 + signature / 10000)
 
 
 def utility(metrics, key):
     metric, scale = PRIORITIES[key]
-    if key == "stealth":
-        value = max(metrics["em"], metrics["ir"]) if metrics.get("em") is not None and metrics.get("ir") is not None else None
-    else:
-        value = metrics.get(metric)
+    value = metrics.get(metric)
     if value is None or value < 0:
         return 0
+    if key == "handling":
+        return value
     return scale / (scale + value) if key == "stealth" else value / (scale + value)
 
 
@@ -100,7 +109,7 @@ def known_priorities(metrics, weights):
     for key, weight in weights.items():
         if not weight:
             continue
-        required = ("em", "ir") if key == "stealth" else (PRIORITIES[key][0],)
+        required = (PRIORITIES[key][0],)
         if any(metrics.get(k) is None for k in required):
             return False
     return True
@@ -123,10 +132,23 @@ def dominates(a, b):
     return all(x >= y for x, y in zip(va, vb)) and any(x > y for x, y in zip(va, vb))
 
 
-def optimize(catalogue, ship, request=None):
+def optimize(catalogue, ship, request=None, component_market=None):
     request = request or Search()
     started = time.monotonic()
     model = ShipModel(catalogue, ship)
+    component_market = component_market or {"items": {}}
+    if request.equipment_mode == "shop" and not component_market.get("downloaded_at"):
+        raise ValueError("Refresh component shops before choosing shop-listed upgrades")
+    seed = {**request.seed_swaps, **request.locks}
+    model.selection(seed)  # Reject incompatible, unknown or unmodeled locks before searching.
+    def allowed(port, name):
+        return (request.equipment_mode == "best" or name == model.stock.get(port)
+                or bool(offers_for(catalogue.items[name], component_market)))
+    for port, name in seed.items():
+        if not allowed(port, name):
+            raise ValueError(f"No recorded NPC seller for {catalogue.items[name]['Name']}; use best-compatible mode to keep it")
+    variables = [(port, tuple(name for name in choices if allowed(port, name)))
+                 for port, choices in model.variables if port not in request.locks]
     if request.goal in {"damage", "burst", "alpha", "pve", "pvp", "balanced"} and not model.pilot_ports:
         raise ModelError("No verified pilot-controlled guns for this combat objective")
     baseline = model.evaluate(duration=request.duration)
@@ -178,14 +200,14 @@ def optimize(catalogue, ship, request=None):
             index += 1
         return chosen
 
-    beam = beam_from(evaluate({}))
+    beam = beam_from(evaluate(seed))
     # First pass changes interchangeable slots together; following passes allow mixed fits.
     groups = {}
-    for port, choices in model.variables:
+    for port, choices in variables:
         groups.setdefault(choices, []).append(port)
     completed_passes = 0
     for pass_index in range(request.passes):
-        dimensions = [(ports, choices) for choices, ports in groups.items()] if pass_index == 0 else [([port], choices) for port, choices in model.variables]
+        dimensions = [(ports, choices) for choices, ports in groups.items()] if pass_index == 0 else [([port], choices) for port, choices in variables]
         for ports, choices in dimensions:
             candidates = list(beam)
             for state in beam:
@@ -205,7 +227,7 @@ def optimize(catalogue, ship, request=None):
     feasible = [s for s in archive.values() if s["feasible"] and meets(s["metrics"], request)]
     if request.goal == "custom":
         feasible = [s for s in feasible if known_priorities(s["metrics"], request.weights)]
-    required = {"handling": "pitch", "speed": "max_speed", "scm_speed": "scm_speed"}.get(request.goal)
+    required = {"handling": "maneuverability_score", "pvp": "maneuverability_score", "speed": "max_speed", "scm_speed": "scm_speed", "stealth": "signature", "balanced": "signature"}.get(request.goal)
     if required:
         feasible = [s for s in feasible if s["metrics"].get(required) is not None
                     and (request.goal != "handling" or s["metrics"].get("yaw") is not None)]

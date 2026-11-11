@@ -12,7 +12,10 @@ With Python 3.11 or newer installed, double-click **Open CitizenSolver.vbs** (or
 2. Choose **My priorities** and divide 100% between firepower, shielding, stealth, handling, speed, hull, armor and cargo. Raising one redistributes the others proportionally. Switch between **Pips** and **Sliders** to compare control styles.
 3. Start from PvE, PvP, damage/stealth or cargo presets, or choose a single-stat goal. PvP starts at 75% handling. Mining needs a separate model and is marked as upcoming.
 4. Optionally enter ship budgets in USD reference prices and/or aUEC. Both entered limits must be met. Require an in-game shop listing or set the maximum hangar class. Unknown prices/fit cannot pass an active filter. These are **ship-only** prices; component costs are not included.
-5. Press **Find my fits**. Expand a result for equipment, actual modeled pips, additional stats and assumptions. Save a build or the whole search with the download buttons.
+5. Choose **Best compatible equipment** or **Shop-listed upgrades**. The latter keeps stock parts and permits upgrades with recorded NPC sellers; use **Refresh component shops** if needed. Reports can be from an older patch, so this does not guarantee live stock.
+6. Press **Find my fits**, then **Choose & explore this fit**. Inspect stealth, handling and seller evidence. Optionally open **Change equipment & locks**, swap or lock components, and optimize the remaining ports. Save the selected build or the whole search with the download buttons.
+
+Stealth considers EM, IR and hull cross-section. Handling includes turning, braking and forward acceleration. The selected-build explanations separate these estimates from effects that are not simulated. Target size, opposing radar and destruction-time comparisons are reserved for a later post-selection tool; no opponent is required to select a ship. Owned-inventory matching is also deferred.
 
 Set **Minimum gun reach** beside the goal to require every pilot gun to reach your chosen distance. Results show grouped weapon DPS, listed reach and pellet count. Scattergun damage assumes every pellet hits; listed reach is not a guarantee of useful full damage at that distance. Blank leaves range unrestricted.
 
@@ -35,7 +38,7 @@ python -m citizensolver optimize RSI_Meteor --goal balanced --out builds/meteor.
 
 ## Useful searches
 
-Keep at least 90% of the best 120-second damage found, then minimize the larger of EM and IR:
+Keep at least 90% of the best 120-second damage found, then minimize the EM/IR/cross-section ranking signal:
 
 ```powershell
 python -m citizensolver optimize RSI_Meteor --goal stealth --damage-floor .9 --out builds/meteor-stealth.json

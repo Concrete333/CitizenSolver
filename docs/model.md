@@ -1,4 +1,4 @@
-# Calculation model: scm-estimate-2
+# Calculation model: scm-estimate-3
 
 This model is an explicit engineering approximation. Selected Meteor fits were calibrated against erkul on the same 4.10.2-LIVE.12913470 build; see the [comparison](../verification/meteor-erkul-12913470.md). This does not establish accuracy across ships or in the live game. The optimizer can only be as accurate as this model and its source snapshot.
 
@@ -48,13 +48,17 @@ These policies do not enumerate every legal pip allocation. The evaluate API als
 
 Power-plant EM scales with consumed power relative to total available power. Consumption excludes unused capacity in the last integer weapon pip. Consumer EM scales with allocation and exported power-range modifiers. All gun EM, including ballistics, scales with `allocated_weapon_pips / ceil(total_rated_gun_power)`, capped at one. This signature fraction uses whole pips, while capacitor capacity/recharge uses fractional rated demand. Armor EM multipliers are applied. Estimated IR is summed nominal component IR times cooling utilization, then the armor IR multiplier. Cross-section is exported per axis and shown separately.
 
-These are **steady-state estimates**. Ambient temperature, transient heat, weapon firing, thrust, boost, receiver sensitivity and aspect-dependent detection are not simulated. No detection-distance claim is made. The stealth score minimizes `max(EM, IR)`; it does not minimize cross-section, so compare cross-section separately when choosing different ships.
+These are **steady-state estimates**. Ambient temperature, transient heat, weapon firing, thrust, boost, receiver sensitivity and aspect-dependent detection are not simulated. No detection-distance claim is made. Effective cross-section is each exported X/Y/Z value multiplied once by the hull's CrossSection signal multiplier. The exporter leaves these raw axis values unmodified. For each axis the ranking uses `max(EM, IR, effective_CS_axis)`, then averages the three values. This is an explicit product proxy for comparing silhouettes and emissions, not a validated radar equation or an average over viewing angles. Missing any axis or IR excludes builds from stealth-weighted ranking. The UI avoids assigning front/side/top names to unvalidated axes.
+
+The selected build shows its own radar's IR/EM/CS sensitivity separately. A stronger receiver does not make the ship stealthier. Aim-assist assignment ranges are targeting-assist values, never detection ranges. Detection comparisons require an opposing radar, aspect, environment and signal-state model; those belong to a later post-selection matchup tool. See [research and sources](data-sources.md#stealth-and-flight-research).
 
 ## Shields and flight
 
 Shield HP is the sum of installed generators. Regen is rated regen times allocation fraction and its power-range modifier. Regen delays, damage interruptions and face allocation are not simulated. The model has primarily been exercised on fighters; multi-generator capital-ship behavior needs validation.
 
-Pitch, yaw, roll, boost rates and speed are source flight-blade ratings. Swapping an eligible blade changes those ratings. Pips do **not** modify the displayed rates in this version. There are both current/legacy-looking flight records in the source; resolving their exact in-game applicability is validation work. Hard handling limits apply to these ratings, not measured flight performance. Acceleration and atmospheric handling are not optimized.
+Pitch, yaw, roll, boost rates and speed are source flight-blade ratings. Swapping an eligible blade changes those ratings. Pips do **not** modify the displayed rates in this version. There are both current/legacy-looking flight records in the source; resolving their exact in-game applicability is validation work. Hard handling limits apply to these ratings, not measured flight performance. The handling score now includes exported unboosted hull Main and Retro acceleration, in m/s². These remain fixed during equipment swaps; mass changes, atmosphere, jerk, thruster damage and boost endurance are not modeled. The aggregate Maneuver acceleration is not labeled lateral acceleration. Ideal 0-to-SCM and SCM-to-zero times assume immediate constant acceleration and are explanatory estimates only.
+
+Let `T = (pitch/(pitch+60) + yaw/(yaw+60))/2`. Handling utility is `0.70*T + 0.20*retro/(retro+50) + 0.10*main/(main+100)`. These weights and scales are product choices, not game constants. Roll and boost rates are displayed separately. Missing required flight inputs excludes a handling-weighted candidate.
 
 ## Objective meanings
 
@@ -63,12 +67,12 @@ Pitch, yaw, roll, boost rates and speed are source flight-blade ratings. Swappin
 | damage | Cycle sustained hull DPS, before ammunition depletion |
 | burst | Hull burst DPS |
 | alpha | Hull damage in one full salvo |
-| stealth | Negative of the larger estimated EM or IR |
-| balanced | Finite-duration hull DPS / (1 + max(EM, IR) / 10,000) |
-| pve | 0.70 × duration DPS / 1,000 + 0.25 × shield HP / 10,000 + 0.05 × rated pitch / 100 |
+| stealth | Negative axis-average strongest signature |
+| balanced | Finite-duration hull DPS / (1 + ranking signature / 10,000) |
+| pve | 0.70 × duration DPS / 1,000 + 0.25 × shield HP / 10,000 + 0.05 × handling utility |
 | pvp | 75% bounded handling utility, 20% duration DPS utility, 5% shield utility |
 | shields / shield_regen | Total shield HP / modeled regeneration |
-| handling | Mean of rated pitch and yaw |
+| handling | Bounded turning/braking/acceleration utility above |
 | speed / scm_speed | Maximum / SCM speed rating |
 | custom | Weighted sum of bounded stat utilities, described below |
 | cargo (workbench) | Exported cargo-grid SCU; no equipment search |
@@ -77,20 +81,20 @@ These are explicit preference scores, not physical units. PvE gives handling les
 
 For stealth and balanced, `damage_floor` retains at least that fraction of the highest finite-duration DPS among feasible candidates found that meet the hard constraints. Default 0.9. This is relative to this search, not a proven theoretical maximum. In cross-ship comparisons the floor applies separately to each ship.
 
-`min_range` and `min_velocity` require every installed pilot gun to meet the threshold. They do not estimate hit probability. The browser exposes Minimum gun reach beside the goal and lists grouped gun DPS, nominal reach and pellets per shot. A multi-pellet fit explicitly warns that spread can reduce damage before the range limit. No distance-dependent damage curve or target-size/spread model is implied; a blank range constraint leaves short-range guns eligible. Collector and special equipment may be compatible but unobtainable; the source has no trusted availability contract here, and all results disclose this.
+`min_range` and `min_velocity` require every installed pilot gun to meet the threshold. They do not estimate hit probability. The browser exposes Minimum gun reach beside the goal and lists grouped gun DPS, nominal reach and pellets per shot. A multi-pellet fit explicitly warns that spread can reduce damage before the range limit. No distance-dependent damage curve or target-size/spread model is implied; a blank range constraint leaves short-range guns eligible. Best-compatible mode includes potentially unobtainable collector and special items. Shop-listed mode restricts upgrades to exact-UUID NPC purchase reports while retaining ship stock; these reports can be stale and are not live inventory.
 
 ### Browser priority budget
 
 The UI activity buttons set **custom** weights that the player can change; they do not call the older CLI `pve` scoring formula. Initial presets: PvE 65% firepower / 25% shields / 10% handling; PvP 75% handling / 20% firepower / 5% shields; damage + stealth 50% each; cargo 65% cargo / 15% shields / 15% speed / 5% handling.
 
-For an increasing stat, utility is `value / (value + scale)`. For stealth it is `scale / (scale + max(EM, IR))`. The preference score is `100 * sum(weight/100 * utility)`. Fixed scales allow comparisons without changing the meaning when candidates change. The following initial scales are design choices, not game constants:
+For an increasing stat except handling, utility is `value / (value + scale)`. For stealth it is `scale / (scale + ranking_signature)`. Handling uses its combined utility directly. The preference score is `100 * sum(weight/100 * utility)`. Fixed scales allow comparisons without changing the meaning when candidates change. The following initial scales are design choices, not game constants:
 
 | Priority | Stat | Half-score scale |
 | --- | --- | --- |
 | Firepower | Finite-engagement pilot hull DPS | 1,500 DPS |
 | Shielding | Shield HP | 10,000 HP |
-| Stealth | Larger of estimated EM and IR | 10,000 |
-| Maneuverability | Average pitch and yaw | 60 degrees/second |
+| Stealth | Axis-average strongest EM/IR/CS signature | 10,000 |
+| Maneuverability | Turning, braking and acceleration | Component scales above |
 | Speed | Maximum rated speed | 1,000 m/s |
 | Hull | Exported total part health | 20,000 HP |
 | Armor | Exported armor health | 10,000 HP |

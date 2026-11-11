@@ -49,6 +49,7 @@ def fixture(folder):
             "Weaponry": {"FixedWeapons": {"Weapons": [{"ClassName": "laser"}]}},
             "Armor": {"SignalMultipliers": {"Electromagnetic": 1, "Infrared": 1}},
             "CrossSection": {"X": 500, "Y": 200, "Z": 1000}}
+    ship["FlightCharacteristics"] = {"Acceleration": {"Raw": {"Main": 80, "Retro": 40}}}
     root = Path(folder)
     snapshot = root / REVISION
     snapshot.mkdir()

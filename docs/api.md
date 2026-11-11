@@ -33,7 +33,11 @@ Use `scope: "ship"` and `ship: "RSI_Meteor"` for a single hull. `max_crew` filte
 
 Custom weights total 100; omitted dimensions have zero weight. Keys: `firepower`, `shields`, `stealth`, `handling`, `speed`, `hull`, `armor`, `cargo`. A positive priority with an unknown stat excludes that build. `goal: "cargo"` is a separate stock cargo-grid comparison, not an equipment optimization; it rejects combat constraints instead of ignoring them.
 
-`POST /api/market/refresh` with `{}` starts a job that fetches the public FleetYards model pages and atomically replaces `data/market.json`. Failed downloads leave the old cache intact. Other endpoints do not download data or write user files.
+`POST /api/market/refresh` with `{}` starts a job that fetches the public FleetYards model pages and atomically replaces `data/market.json`. `POST /api/equipment/refresh` similarly loads UEX NPC component listings into `data/equipment-market.json`. Failed downloads leave the old cache intact. Other endpoints do not download data or write user files.
+
+Search settings accept `equipment_mode: "best"` (default) or `"shop"`. Shop mode requires a downloaded component cache and permits stock equipment plus exact-UUID NPC-listed upgrades. `seed_swaps` supplies the starting fit; `locks` maps ports to components that the search must retain. Both use exact ids and are validated for compatibility. They apply only to one selected ship, never to a class search. Component locks do not lock power allocation. Unlisted locked upgrades are rejected in shop mode.
+
+`GET /api/components?ship=RSI_Meteor` returns modeled ports, stock ids, compatible choices, seller reports and the active revision for the optional editor. It does not expose arbitrary mount changes. Editor requests carry `revision`; a mismatch returns 400 before evaluation/search. `/api/options` includes component-cache download time and count. Evaluations and workbench results include `stealth`, `maneuverability`, per-component `purchase` evidence and `equipment_source`.
 
 ## Evaluate
 
@@ -43,7 +47,7 @@ Custom weights total 100; omitted dimensions have zero weight. Keys: `firepower`
 {"ship":"RSI_Meteor","profile":"damage","duration":120,"swaps":{}}
 ```
 
-`ship` is a class id or unambiguous name. `swaps` maps exact exported port ids to component class ids; obtain them from `python -m citizensolver components RSI_Meteor --json`. Unknown, locked and incompatible swaps are rejected.
+`ship` is a class id or unambiguous name. `swaps` maps exact exported port ids to component class ids; obtain them through `/api/components`. Unknown, fixed and incompatible swaps are rejected. Manual evaluation checks physical feasibility, not the original search's budget, range or priority constraints; the UI states that distinction.
 
 Optional `pips` supplies a complete mapping of powered port ids and `weapons` to integer allocations. Copy the `power.allocation` from an evaluated result and adjust within `power.bounds`. If present it replaces the automatic profile allocation. Bounds errors return 400; a within-bounds but over-budget or undercooled build returns `feasible: false` with violations.
 

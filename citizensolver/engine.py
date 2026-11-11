@@ -5,8 +5,9 @@ from functools import lru_cache
 import math
 
 from .catalogue import kind, walk_ports
+from .insights import stealth_profile, handling_profile
 
-MODEL_VERSION = "scm-estimate-2"
+MODEL_VERSION = "scm-estimate-3"
 ASSUMPTIONS = [
     "Experimental model; selected Meteor fits calibrated against erkul on 4.10.2-LIVE.12913470, not validated in game.",
     "SCM, stationary, undamaged, fixed weapons, primary firing mode, all shots hit; no armor/penetration simulation.",
@@ -371,6 +372,12 @@ class ShipModel:
                        cargo_scu=self.ship.get("Cargo"),
                        hull_hp=self.ship.get("Health"), armor_hp=armor.get("Health"),
                        handling=(rates["Pitch"] + rates["Yaw"]) / 2 if rates.get("Pitch") is not None and rates.get("Yaw") is not None else None)
+        stealth = stealth_profile(self.ship, em, ir)
+        handling = handling_profile(self.ship, rates, boosted, speed)
+        metrics.update(signature=stealth["ranking_signal"], maneuverability_score=handling["score"])
+        radars = [{"name": i["Name"], "sensitivity": (i.get("Radar") or {}).get("Sensitivity"),
+                   "aim_assist": (i.get("Radar") or {}).get("AimAssist"), "pips": pips.get(k)}
+                  for k, i in items.items() if kind(i) == "Radar"]
         return {"ship": {"id": self.ship["ClassName"], "name": self.ship["Name"], "role": self.ship.get("Role")},
                 "model_version": MODEL_VERSION, "data": self.catalogue.manifest,
                 "status": "experimental", "feasible": not violations, "violations": violations,
@@ -378,6 +385,7 @@ class ShipModel:
                 "metrics": metrics, "weapons": weapons,
                 "flight": {"rated": rates, "boosted_rated": boosted, "speeds_m_s": speed},
                 "cross_section": self.ship.get("CrossSection"),
+                "stealth": {**stealth, "own_radars": radars}, "maneuverability": handling,
                 "power": {"available": available, "used": used, "consumed": self.consumed_power(items, pips), "allocation": pips, "bounds": bounds},
                 "cooling": {"demand": cooling_load, "available": cooling_output},
                 "loadout": [{"port": k, "hardpoint": self.ports[k][0]["HardpointName"],

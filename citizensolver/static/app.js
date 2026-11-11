@@ -5,8 +5,8 @@ const number = (value, decimals = 0) => value == null ? '—' : Number(value).to
 const definitions = {
   firepower: ['Firepower', 'Gun damage over the engagement'],
   shields: ['Shielding', 'Total shield capacity'],
-  stealth: ['Stealth', 'Lower estimated EM and IR'],
-  handling: ['Maneuverability', 'Average rated pitch and yaw'],
+  stealth: ['Stealth', 'EM, IR and hull cross-section'],
+  handling: ['Maneuverability', 'Turning, braking and acceleration'],
   speed: ['Straight-line speed', 'Maximum rated flight speed'],
   hull: ['Hull', 'Total part HP · fixed hull trait'],
   armor: ['Armor', 'Armor HP · fixed hull trait'],
@@ -86,14 +86,14 @@ function readRequest() {
   return {scope:scope(), ship:$('ship').value, role:$('role').value, goal:$('goal').value,
     max_crew:numeric('crew'), max_usd:numeric('max-usd'), max_auec:numeric('max-auec'),
     require_ingame:$('ingame').checked, hangar:$('hangar').value || null,
-    search:{weights:{...weights}, duration:$('goal').value === 'cargo' ? 120 : numeric('duration'), damage_floor:Number($('retention').value)/100,
+    search:{equipment_mode:$('equipment-mode').value, weights:{...weights}, duration:$('goal').value === 'cargo' ? 120 : numeric('duration'), damage_floor:Number($('retention').value)/100,
       min_shield:$('goal').value === 'cargo' ? 0 : numeric('min-shield') || 0,
       min_range:$('goal').value === 'cargo' ? 0 : numeric('min-range') || 0,
       beam:quick ? 3 : 6, passes:quick ? 1 : 2, max_evaluations:quick ? 3000 : 15000, limit:5}};
 }
 function setBusy(value) {
   busy = value;
-  document.querySelectorAll('#solver input, #solver select, #solver button[data-preset], #solver button[type="submit"], #refresh-market').forEach(el => {el.disabled = value;});
+  document.querySelectorAll('#solver input, #solver select, #solver button:not([title]), #refresh-market').forEach(el => {el.disabled = value;});
   document.querySelector('[data-preset="cargo"]').disabled = value;
   // The unreleased mining preset has no data-preset attribute and stays disabled.
   for (const id of ['solve','solve-priorities']) $(id).innerHTML = value ? 'Searching… <span>◌</span>' : 'Find my fits <span>↗</span>';
@@ -114,7 +114,7 @@ async function followJob(id, path) {
     const p = state.progress;
     if (p.total) {$('progress').max = p.total; $('progress').value = p.done;}
     else $('progress').removeAttribute('value');
-    setStatus(path.includes('market') ? 'Refreshing reference prices and hangar classes…' : `Searching ${p.ship} · ${p.done} of ${p.total || '…'} ships complete`);
+    setStatus(path.includes('refresh') ? 'Refreshing recorded shop data…' : `Searching ${p.ship} · ${p.done} of ${p.total || '…'} ships complete`);
     await new Promise(resolve => setTimeout(resolve, 800));
   }
 }
@@ -163,11 +163,12 @@ function resultHTML(r, index, report) {
     <div class="price-strip"><span>${price}</span><span>${auec}</span><span>${market.hangar ? escapeHTML(market.hangar)+' hangar class' : 'Hangar fit unknown'}</span></div>
     <div class="metric-grid">${displayMetrics.map(d => metricHTML(m,d,baseline)).join('')}</div>
     ${cargoOnly ? '' : weaponReachHTML(r.weapons, report.request.search.min_range)}
-    ${cargoOnly?'':`<details class="fit-details"><summary>Equipment & power allocation · ${Object.keys(r.swaps).length} changed ports</summary><p>Power: ${r.power.used} / ${r.power.available} pips · Cooling: ${number(r.cooling.demand,1)} / ${number(r.cooling.available,1)} modeled units. Priority percentages above are preferences, not these equipment pips.</p><div class="table-wrap"><table><thead><tr><th>Mount / port</th><th>Component</th><th>Type</th><th>Pips</th></tr></thead><tbody>${loadout}</tbody></table></div><div class="pip-list"><span class="pip-chip">Shared weapons: ${pips.weapons ?? 0} pips</span></div><p>Only supported powered components are listed. Other mounts stay stock; shop availability of these components is not verified.</p></details><details class="fit-details"><summary>More stats & ranking breakdown</summary><div class="metric-grid">${extraStats.map(d=>metricHTML(m,d,baseline)).join('')}</div><p>¹ Repeating DPS before ballistic ammunition runs out. Engagement DPS accounts for the selected ${r.scenario.duration_seconds}-second duration. All damage assumes hits; distortion is reported separately in the saved build.</p>${r.priority_scores?`<div class="table-wrap"><table><thead><tr><th>Priority</th><th>Your weight</th><th>Stat score / 100</th><th>Points earned</th></tr></thead><tbody>${Object.entries(r.priority_scores).map(([k,v])=>`<tr><td>${definitions[k][0]}</td><td>${report.request.search.weights[k]}%</td><td>${number(v,1)}</td><td>${number(v*report.request.search.weights[k]/100,1)}</td></tr>`).join('')}</tbody></table></div>`:''}</details>`}
+    ${cargoOnly?'':`<details class="fit-details"><summary>Equipment & power allocation · ${Object.keys(r.swaps).length} changed ports</summary><p>Power: ${r.power.used} / ${r.power.available} pips · Cooling: ${number(r.cooling.demand,1)} / ${number(r.cooling.available,1)} modeled units. Priority percentages above are preferences, not these equipment pips.</p><div class="table-wrap"><table><thead><tr><th>Mount / port</th><th>Component</th><th>Type</th><th>Pips</th></tr></thead><tbody>${loadout}</tbody></table></div><div class="pip-list"><span class="pip-chip">Shared weapons: ${pips.weapons ?? 0} pips</span></div><p>Only supported powered components are listed. Other mounts stay stock. Choose this fit to see recorded sellers and report dates; listings are not live stock guarantees.</p></details><details class="fit-details"><summary>More stats & ranking breakdown</summary><div class="metric-grid">${extraStats.map(d=>metricHTML(m,d,baseline)).join('')}</div><p>¹ Repeating DPS before ballistic ammunition runs out. Engagement DPS accounts for the selected ${r.scenario.duration_seconds}-second duration. All damage assumes hits; distortion is reported separately in the saved build.</p>${r.priority_scores?`<div class="table-wrap"><table><thead><tr><th>Priority</th><th>Your weight</th><th>Stat score / 100</th><th>Points earned</th></tr></thead><tbody>${Object.entries(r.priority_scores).map(([k,v])=>`<tr><td>${definitions[k][0]}</td><td>${report.request.search.weights[k]}%</td><td>${number(v,1)}</td><td>${number(v*report.request.search.weights[k]/100,1)}</td></tr>`).join('')}</tbody></table></div>`:''}</details>`}
     <details class="fit-details"><summary>Assumptions & source details</summary>${(r.assumptions || []).map(s=>`<p>${escapeHTML(s)}</p>`).join('')}<p>Hull and armor ratings do not predict damage to destruction. Hangar fit: ${escapeHTML(market.hangar_basis || 'Not known')} USD prices are reference values, not a current purchase offer. In-game prices are cached shop listings; check them in game before buying.</p><p>FleetYards record updated: ${escapeHTML(market.updated_at || 'unknown')}. Cache downloaded: ${escapeHTML(report.market_downloaded_at || 'not downloaded')}.</p>${(market.locations||[]).map(p=>`<p>${escapeHTML(p.name)} · ${number(p.price)} aUEC · ${escapeHTML(p.updated_at || 'date unknown')}</p>`).join('')}</details>
-    <div class="fit-actions"><span>${cargoOnly?'Exported cargo capacity':'Best found in a bounded search · experimental'}</span><button type="button" class="quiet" data-save="${index}">↓ Save ${cargoOnly?'ship':'build'}</button></div></article>`;
+    <div class="fit-actions"><span>${cargoOnly?'Exported cargo capacity':'Best found in a bounded search · experimental'}</span>${cargoOnly?'':`<button type="button" class="quiet" data-choose="${index}">Choose & explore this fit ↗</button>`}<button type="button" class="quiet" data-save="${index}">↓ Save ${cargoOnly?'ship':'build'}</button></div></article>`;
 }
 function showResults(report) {
+  $('selected-fit').hidden = true;
   lastResult = report; $('export').hidden = false;
   const names = Object.entries(report.request.search.weights).filter(([,v])=>v).map(([k,v])=>`${definitions[k][0]} ${v}%`).join(' · ');
   setStatus(`${report.results.length} fits · ${report.ships_eligible} eligible / ${report.ships_considered} considered${report.goal==='custom'?' · '+names:''}`);
@@ -178,6 +179,7 @@ function showResults(report) {
 }
 async function loadOptions(initial = false) {
   options = await api('/api/options');
+  $('equipment-cache').textContent = options.equipment.downloaded_at ? `${options.equipment.count} components with recorded sellers · downloaded ${options.equipment.downloaded_at.slice(0,10)}. Individual reports may be older.` : 'No shop data yet. Refresh component shops to use shop-listed upgrades.';
   $('game-version').textContent = options.data.game_version;
   const matched = options.ships.filter(s=>options.market.ships[s.id.toLowerCase()]).length;
   $('coverage').textContent = `${options.ships.length} ships · ${matched} matched price / size records`;
@@ -205,7 +207,7 @@ async function submit(event) {
 }
 renderPriorityControls();
 $('solver').addEventListener('submit', submit);
-$('solver').addEventListener('input', event => {if (event.target.name !== 'view') markDirty();});
+$('solver').addEventListener('input', event => {if (event.target.name !== 'view' && !event.target.closest('#selected-fit')) markDirty();});
 $('solver').addEventListener('change', event => {
   if (event.target.name === 'scope') updateScope();
   if (event.target.name === 'view') $('priorities').className = 'priorities ' + event.target.value;
@@ -220,8 +222,16 @@ document.querySelectorAll('[data-preset]').forEach(button => button.addEventList
 }));
 $('export').addEventListener('click', () => download(lastResult, 'citizensolver-results.json'));
 $('results').addEventListener('click', event => {
+  const choose = event.target.closest('[data-choose]');
+  if (choose && !busy) chooseFit(lastResult.results[Number(choose.dataset.choose)], lastResult.request);
   const save = event.target.closest('[data-save]');
   if (save && lastResult) {const build = lastResult.results[Number(save.dataset.save)]; download(build, build.ship.id+'-build.json');}
+});
+$('refresh-equipment').addEventListener('click', async () => {
+  setBusy(true);
+  try {await runJob('/api/equipment/refresh', {}); await loadOptions(); setStatus('Component shop reports refreshed. Run a new search to apply them.');}
+  catch(error) {setStatus(error.message, 'error');}
+  finally {setBusy(false);}
 });
 $('refresh-market').addEventListener('click', async () => {
   setBusy(true);

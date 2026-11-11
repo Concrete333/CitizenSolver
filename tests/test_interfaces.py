@@ -63,13 +63,26 @@ class Interfaces(unittest.TestCase):
             Catalogue(self.temp.name)
 
     def test_http_health_evaluate_optimize_and_errors(self):
-        server = ThreadingHTTPServer(("127.0.0.1", 0), handler(self.catalogue))
+        server = ThreadingHTTPServer(("127.0.0.1", 0), handler(self.catalogue, data_folder=self.temp.name))
         thread = Thread(target=server.serve_forever, daemon=True)
         thread.start()
         base = f"http://127.0.0.1:{server.server_port}"
         try:
             with urlopen(base + "/api/health", timeout=10) as r:
                 self.assertEqual(json.load(r)["status"], "ok")
+            with urlopen(base + "/api/components?ship=TEST_Ship", timeout=10) as r:
+                components = json.load(r)
+                self.assertEqual(components["revision"], REVISION)
+                plant = next(p for p in components["ports"] if p["port"] == "p1")
+                self.assertIn("quiet", [c["id"] for c in plant["choices"]])
+            with urlopen(base + "/editor.js", timeout=10) as r:
+                self.assertIn("text/javascript", r.headers["Content-Type"])
+            req = Request(base + "/api/evaluate", data=json.dumps({"ship":"TEST_Ship", "revision":"stale"}).encode(), headers={"Content-Type":"application/json"})
+            with self.assertRaises(HTTPError) as ctx:
+                urlopen(req, timeout=10)
+            self.assertEqual(ctx.exception.code, 400)
+            self.assertIn("Game data changed", ctx.exception.read().decode())
+            ctx.exception.close()
             for endpoint in ("evaluate", "optimize"):
                 req = Request(base + "/api/" + endpoint, data=json.dumps({"ship": "TEST_Ship"}).encode(), headers={"Content-Type": "application/json"})
                 with urlopen(req, timeout=10) as r:

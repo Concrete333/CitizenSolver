@@ -33,7 +33,25 @@ Hangar filtering uses `metrics.dockSize`, not the game export's numeric size or 
 
 CIG's [Hangar FAQ](https://support.robertsspaceindustries.com/hc/en-us/articles/115013325128-Hangar-FAQs) names Small, Medium, Large and Extra Large hangars. Its Retaliator, Caterpillar, Starfarer, Reclaimer and 890 Jump examples agree with the corresponding FleetYards classes inspected during development. It does not certify every ship in this cache. Public hosting still needs review of data-serving terms for these sources.
 
-## Activity objectives
+## Stealth and flight research
+
+Reviewed 11 November 2026 against the local 4.10.2-LIVE.12913470 export:
+
+- CIG's [Electronic Warfare design notes](https://robertsspaceindustries.com/en/comm-link/engineering/14926-Design-Notes-Electronic-Warfare) distinguish electrical, heat and cross-section signatures, receiver sensitivity and background conditions. This is historical design guidance (2015), not proof of the current detection-distance formula. We use it to explain the concepts, not to promise every described feature is implemented.
+- The pinned exporter's [Radar mapping](https://github.com/octfx/ScDataDumper/blob/120a728639bdd1b06525a0f8574cb0e91d0fbf8d/src/Formats/ScUnpacked/Radar.php) separates signature-channel sensitivity from aim-assist assignment distance. Local radar records also distinguish active/passive permissions and piercing. Multiplying an arbitrary signature by a single radar coefficient would not establish a valid current detection distance.
+- Cornerstone's [ship radar data](https://www.cstone.space/resources/knowledge-base/89-know-your-hardware-the-complete-list-of-ship-installed-radars-and-their-ir-em-cs-and-rs-values) explains the separately exported IR/EM/CS/RS receiver channels. These are shown as receiver ratings, not as a ship's stealth rating.
+- CIG's [Engineering Gameplay Guide](https://robertsspaceindustries.com/en/comm-link/transmission/20935-Engineering-Gameplay-Guide) describes subsystem power ranges and shared pools. This supports exposing power-state limits instead of assuming every displayed flight rate scales linearly with pips.
+- CIG's [Getting Started flight guide](https://support.robertsspaceindustries.com/hc/en-us/articles/360025028633-Getting-Started-in-the-Verse) distinguishes SCM maneuvering from higher-speed flight and VTOL behavior. Its [2020 flight notes](https://robertsspaceindustries.com/en/comm-link/transmission/17647-Flight-Fight-Upcoming-Improvements) describe acceleration ramp-up; they are historical context, not current numerical constants.
+
+Implementation inference: compare ships with a target-independent signature proxy and rated turning/braking/acceleration. Show how the components contribute, and state what is unknown. Do not label signatures as meters, part-health sums as time-to-kill, or ideal constant-acceleration timings as measured flight performance. The selected-build UI is the home for future opponent/radar/target-size comparisons.
+
+## Component shop listings
+
+UEX's public [API documentation](https://uexcorp.space/api/documentation/), [items](https://uexcorp.space/api/documentation/id/get_items/) and [item prices](https://uexcorp.space/api/documentation/id/get_items_prices/) describe category-scoped equipment and purchase reports. The documented API base in this implementation is `https://api.uexcorp.uk/2.0/`. The read-only categories/items/items_prices endpoints used here require no token. A refresh makes 15 requests for the seven relevant categories, below the documented 120-per-minute limit, and writes only an ignored local cache.
+
+Only exact UUID matches and positive finite NPC `price_buy` records qualify an upgrade. Player-owned terminals, missing ownership flags, zero prices and name-only matches do not. The UI shows shop, aUEC price, report patch and report date. Download time is separate: records returned in November include older 4.10.0 reports even though our game data is 4.10.2. This is why the mode says **Shop-listed upgrades**, not guaranteed currently purchasable equipment. No erkul backend is queried. Stock components remain eligible because they come fitted to the selected ship. Full ownership/inventory matching is deferred.
+
+## Activity objective scope
 
 The first presets express user preferences, not official balance guidance or proven PvP win rates. Further useful dimensions include acceleration/boost endurance, weapon reach and velocity, shield recovery, quantum range and fuel, crew requirements, container sizes/loading access, running costs and salvage throughput.
 

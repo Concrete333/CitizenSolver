@@ -3,21 +3,22 @@ from dataclasses import replace
 from .optimizer import Search, optimize
 from .engine import ModelError
 from .market import limits, exclusion
+from .equipment import annotate_equipment
 
 OBJECTIVES = [
     {"id": "custom", "name": "My priorities", "category": "Priorities", "detail": "Split 100% across the stats you care about. Higher priority gives a stat more influence on the ranking, not a promised percentage improvement.", "metric": "duration_dps", "unit": "DPS"},
-    {"id": "balanced", "name": "Damage + stealth", "category": "Combat", "detail": "Keep most of your firepower while reducing EM and IR.", "metric": "duration_dps", "unit": "DPS"},
+    {"id": "balanced", "name": "Damage + stealth", "category": "Combat", "detail": "Keep most of your firepower while reducing signatures, including hull cross-section.", "metric": "duration_dps", "unit": "DPS"},
     {"id": "damage", "name": "Sustained damage", "category": "Combat", "detail": "Maximize repeating gun damage before ballistic ammo runs out.", "metric": "sustained_dps", "unit": "DPS"},
     {"id": "burst", "name": "Burst damage", "category": "Combat", "detail": "Maximize damage while all guns are firing.", "metric": "burst_dps", "unit": "DPS"},
     {"id": "alpha", "name": "First-strike damage", "category": "Combat", "detail": "Maximize the damage of one complete salvo.", "metric": "alpha", "unit": "damage"},
-    {"id": "stealth", "name": "Lowest signatures", "category": "Combat", "detail": "Minimize the larger of estimated EM and IR, while retaining your chosen damage.", "metric": "em", "unit": "EM"},
+    {"id": "stealth", "name": "Lowest signatures", "category": "Combat", "detail": "Minimize the axis-average strongest EM, IR or cross-section signal while retaining your chosen damage. This is not detection distance.", "metric": "signature", "unit": "signal"},
     {"id": "shields", "name": "Shield capacity", "category": "Defense", "detail": "Maximize shield HP with a power- and cooling-feasible loadout.", "metric": "shield_hp", "unit": "HP"},
     {"id": "shield_regen", "name": "Shield regeneration", "category": "Defense", "detail": "Maximize modeled shield regeneration per second.", "metric": "shield_regen", "unit": "HP/s"},
-    {"id": "handling", "name": "Maneuverability", "category": "Flight", "detail": "Maximize average rated pitch and yaw. Roll is shown separately; acceleration and pip effects are not simulated.", "metric": "handling", "unit": "°/s"},
+    {"id": "handling", "name": "Maneuverability", "category": "Flight", "detail": "Favor rated pitch/yaw (70%), braking (20%) and forward acceleration (10%). Power and atmospheric effects are not simulated.", "metric": "maneuverability_score", "unit": "score"},
     {"id": "speed", "name": "Straight-line speed", "category": "Flight", "detail": "Maximize the exported maximum speed rating. This is not quantum travel speed or loaded atmospheric performance.", "metric": "max_speed", "unit": "m/s"},
     {"id": "scm_speed", "name": "Combat speed", "category": "Flight", "detail": "Maximize the unboosted SCM speed rating.", "metric": "scm_speed", "unit": "m/s"},
     {"id": "cargo", "name": "Cargo capacity", "category": "Utility", "detail": "Compare cargo-grid SCU between ships. Ore bags and personal storage are separate; this does not change the cargo grid.", "metric": "cargo_scu", "unit": "SCU"},
-    {"id": "pve", "name": "PvE combat", "category": "Activity presets", "detail": "Favor damage over the engagement and shield capacity, with a small handling preference.", "metric": "duration_dps", "unit": "DPS", "weights": "Damage 70% · shields 25% · pitch 5% (normalized stats)"},
+    {"id": "pve", "name": "PvE combat", "category": "Activity presets", "detail": "Favor damage over the engagement and shield capacity, with a small handling preference.", "metric": "duration_dps", "unit": "DPS", "weights": "Damage 70% · shields 25% · handling 5% (normalized stats)"},
     {"id": "pvp", "name": "PvP combat", "category": "Activity presets", "detail": "Handling comes first, followed by engagement damage and shields. An initial preference model, not a prediction of duel outcomes.", "metric": "handling", "unit": "°/s", "weights": "Handling 75% · damage 20% · shields 5% (bounded utility scores)"},
 ]
 ROADMAP = [
@@ -27,7 +28,7 @@ ROADMAP = [
 ]
 
 
-def search_workbench(catalogue, body, progress=lambda *args: None, market=None):
+def search_workbench(catalogue, body, progress=lambda *args: None, market=None, component_market=None):
     market = market or {"ships": {}}
     limits(body)
     scope = body.get("scope", "ship")
@@ -38,6 +39,8 @@ def search_workbench(catalogue, body, progress=lambda *args: None, market=None):
     if not isinstance(settings, dict):
         raise ValueError("Search settings must be an object")
     request = Search(**{**settings, "goal": "balanced" if goal == "cargo" else goal})
+    if scope != "ship" and (request.locks or request.seed_swaps):
+        raise ValueError("Choose one ship before editing or locking equipment")
     if goal == "cargo" and (any((request.min_shield, request.min_dps, request.min_pitch, request.min_yaw,
                                 request.min_range, request.min_velocity)) or request.max_em is not None or request.max_ir is not None):
         raise ValueError("Cargo capacity compares stock cargo grids. Use My priorities to combine cargo with combat constraints.")
@@ -78,7 +81,7 @@ def search_workbench(catalogue, body, progress=lambda *args: None, market=None):
                                             "Stock ship ratings; this ranking does not change equipment or model hauling profit."]})
             continue
         try:
-            report = optimize(catalogue, ship, request if scope == "ship" else replace(request, limit=1))
+            report = optimize(catalogue, ship, request if scope == "ship" else replace(request, limit=1), component_market)
             if scope == "ship":
                 baseline = report["baseline"]
             results.extend(report["results"])
@@ -90,6 +93,7 @@ def search_workbench(catalogue, body, progress=lambda *args: None, market=None):
     progress(len(ships), len(ships), "Finished")
     for result in results:
         result["market"] = market["ships"].get(result["ship"]["id"].casefold(), {})
+        annotate_equipment(result, catalogue, component_market or {})
     results.sort(key=lambda r: r["score"], reverse=True)
     return {"scope": scope, "goal": goal, "results": results[:request.limit], "baseline": baseline,
             "request": body, "ships_considered": considered, "ships_eligible": len(ships), "skipped": skipped, "searches": reports,
