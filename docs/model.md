@@ -1,0 +1,84 @@
+# Calculation model: scm-estimate-1
+
+This model is an explicit engineering approximation. The fields below are reproducible calculations, not claims of matching live Star Citizen or erkul. The optimizer can only be as accurate as this model and its source snapshot.
+
+## Scope
+
+SCM mode, stationary, undamaged ship, fixed firing, primary gun mode, solo pilot. All projectiles and scattergun pellets are assumed to hit, within their rated range. Quantum drive and non-pilot turret weapons are not operated. Life support, radar, flight controller, installed shields and coolers remain powered. Mounts, missiles and other equipment remain stock. Missile damage is not added to gun DPS. Empty hardpoints and alternative mount topology are not searched.
+
+Source `Weaponry` evidence identifies pilot guns and pilot-slaveable turrets. Manned/unproven turret guns do not inflate pilot damage. Unknown essential component records and unsupported stock gun modes prevent analysis of that ship and produce a reason in multi-ship comparisons.
+
+## Damage
+
+The primary mode's typed alpha damage already includes the extractor's projectile multipliers. Hull alpha sums physical, energy and thermal damage. Distortion is tracked separately and never counted as hull DPS. This does not model shield absorption, armor, penetration, fuses, damage falloff, component destruction or time to kill.
+
+`burst_dps = hull_alpha * rounds_per_minute / 60`
+
+Energy weapons use the exported `Capacitor.MaxAmmoLoad`, `MaxRegenPerSec`, cooldown and ammo-per-shot. The weapon group's allocated power first covers ballistic demand; the remaining power scales energy recharge against the installed energy weapons' summed rated demand. Ammo capacity stays constant in this initial model.
+
+`cycle_dps = shots_in_cycle * hull_alpha / (firing_seconds + recovery_seconds)`
+
+The heat model uses exported shots-to-overheat and overheat-fix time. If heat is the limiting cycle, energy recharge and heat recovery are assumed to happen concurrently after firing stops; recovery is the longer duration. Continuous cooling while firing, intentional trigger pacing, spin-up and synchronization between gun groups are not simulated. Charged, burst and beam primary modes are excluded rather than assigned a fabricated firing cycle.
+
+Finite engagement damage counts complete cycles plus the partial final firing window and caps ballistic shots at ammunition capacity. It uses continuous time windows, not discrete first-shot timing. Sustained DPS therefore need not equal finite-duration DPS, especially in a short engagement. Ballistic `ammo_trigger_seconds` means active trigger time to empty, excluding cooling pauses.
+
+Weapons are cycled independently. The importer does not expose all ship-level capacitor assignment curves/buffs, so this is not a shared-capacitor scheduler. This is a material limitation for energy-heavy builds, and is included in every report's assumptions.
+
+## Power and cooling
+
+Each powered subsystem has integer pip bounds from the resource network. Each gun shares a weapon-group allocation limited by the ship's exported weapon pool. We retain at least one weapon pip and each essential subsystem's minimum; the optimizer cannot win stealth by turning the whole ship off.
+
+For multiple plants the current model follows the community extractor's formula:
+
+`available = sum(round_half_up(plant_generation / plant_count)) + (plant_count - 1) * sum(plant_size)`
+
+Cooler output is exported coolant generation times its allocated-power fraction and exported power-range modifier. Estimated heat load is allocated power plus proportional coolant demand from shields, radar and life support. Insufficient power or cooling makes a candidate infeasible. This is not a physical thermal simulation, damage network or relay simulation.
+
+Three deterministic allocation policies are searched:
+
+- **damage:** start at subsystem minima, then fill weapons, shields, flight and radar in that order; add cooler pips as needed.
+- **balanced:** the same process with shields before weapons.
+- **stealth:** remain at subsystem minima, adding cooler pips only as needed.
+
+These policies do not enumerate every legal pip allocation. The evaluate API also accepts an exact allocation, checked against the bounds and total power/cooling constraints.
+
+## Signatures
+
+Power-plant EM scales with total allocated power relative to total available power. Consumer EM scales with allocation and exported power-range modifiers. Armor EM multipliers are applied. Estimated IR is summed nominal component IR times cooling utilization, then the armor IR multiplier. Cross-section is exported per axis and shown separately.
+
+These are **steady-state estimates**. Ambient temperature, transient heat, weapon firing, thrust, boost, receiver sensitivity and aspect-dependent detection are not simulated. No detection-distance claim is made. The stealth score minimizes `max(EM, IR)`; it does not minimize cross-section, so compare cross-section separately when choosing different ships.
+
+## Shields and flight
+
+Shield HP is the sum of installed generators. Regen is rated regen times allocation fraction and its power-range modifier. Regen delays, damage interruptions and face allocation are not simulated. The model has primarily been exercised on fighters; multi-generator capital-ship behavior needs validation.
+
+Pitch, yaw, roll, boost rates and speed are source flight-blade ratings. Swapping an eligible blade changes those ratings. Pips do **not** modify the displayed rates in this version. There are both current/legacy-looking flight records in the source; resolving their exact in-game applicability is validation work. Hard handling limits apply to these ratings, not measured flight performance. Acceleration and atmospheric handling are not optimized.
+
+## Objective meanings
+
+| Goal | Score |
+| --- | --- |
+| damage | Cycle sustained hull DPS, before ammunition depletion |
+| burst | Hull burst DPS |
+| alpha | Hull damage in one full salvo |
+| stealth | Negative of the larger estimated EM or IR |
+| balanced | Finite-duration hull DPS / (1 + max(EM, IR) / 10,000) |
+| pve | 0.70 × duration DPS / 1,000 + 0.25 × shield HP / 10,000 + 0.05 × rated pitch / 100 |
+
+These are explicit preference scores, not physical units. PvE gives handling less weight and uses finite-duration DPS to include ammo endurance. It is not a universal definition of PvE quality. The same normalization is used across ships so the score does not change merely because the comparison group changes.
+
+For stealth and balanced, `damage_floor` retains at least that fraction of the highest finite-duration DPS among feasible candidates found that meet the hard constraints. Default 0.9. This is relative to this search, not a proven theoretical maximum. In cross-ship comparisons the floor applies separately to each ship.
+
+`min_range` and `min_velocity` require every installed pilot gun to meet the threshold. They do not estimate hit probability. Collector and special equipment may be compatible but unobtainable; the source has no trusted availability contract here, and all results disclose this.
+
+## Search guarantees
+
+The beam search first groups interchangeable slots, then allows independent slot choices. Each retained beam includes goal-ranked candidates plus damage and signature extremes. Every equipment candidate is evaluated with the three power policies. Results are deterministic for the same snapshot and settings, apart from timings.
+
+This is a bounded heuristic. It may miss a better combination, and failure to find a feasible build is not proof that none exists. The report includes evaluation count, completed passes, evaluation-limit status, rejected component reasons and `globally_optimal: false`.
+
+`nondominated_in_searched_candidates` compares finite-duration hull damage, EM, IR and shield HP against the eligible candidates found. It does not certify the complete game's Pareto frontier.
+
+## Before presenting the public tool as validated
+
+Match exact game builds and verify several stock and changed fits against in-game measurements. Test each weapon family, mixed guns, power changes, flight blades, thermal recovery and signatures individually. erkul may be a manual reference with its displayed assumptions, but is not an automated data source. Keep measured evidence separate from source-derived calculations.
