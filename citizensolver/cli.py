@@ -53,7 +53,7 @@ def parser():
     comparison.add_argument("--ships", nargs="+", help="Optional exact subset of ship class ids")
     search_arguments(comparison)
     comparison.set_defaults(goal="pve")
-    serving = sub.add_parser("serve", help="Run the local JSON API (website UI comes later)")
+    serving = sub.add_parser("serve", help="Run the local browser workbench and JSON API")
     serving.add_argument("--port", type=int, default=8765)
     for cmd in (listing, components, evaluate, solving, comparison):
         cmd.add_argument("--out", type=Path, help="Save the complete JSON result")
@@ -119,7 +119,7 @@ def main(argv=None):
         catalogue = Catalogue(args.data)
         if args.command == "serve":
             from .server import serve
-            serve(catalogue, args.port)
+            serve(catalogue, args.port, args.data)
             return 0
         if args.command == "ships":
             result = catalogue.list_ships(args.role)
@@ -140,7 +140,7 @@ def main(argv=None):
                 pips=saved["power"]["allocation"] if saved else None,
                 duration=saved["scenario"]["duration_seconds"] if saved else args.duration)
         else:
-            request = Search(**{k: getattr(args, k) for k in Search.__dataclass_fields__})
+            request = Search(**{k: getattr(args, k) for k in Search.__dataclass_fields__ if hasattr(args, k)})
             result = optimize(catalogue, catalogue.ship(args.ship), request) if args.command == "optimize" else compare(catalogue, args.role, request, args.ships)
         if args.out:
             write_json(args.out, result)

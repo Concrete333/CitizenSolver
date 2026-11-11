@@ -64,12 +64,39 @@ Pitch, yaw, roll, boost rates and speed are source flight-blade ratings. Swappin
 | stealth | Negative of the larger estimated EM or IR |
 | balanced | Finite-duration hull DPS / (1 + max(EM, IR) / 10,000) |
 | pve | 0.70 × duration DPS / 1,000 + 0.25 × shield HP / 10,000 + 0.05 × rated pitch / 100 |
+| pvp | 75% bounded handling utility, 20% duration DPS utility, 5% shield utility |
+| shields / shield_regen | Total shield HP / modeled regeneration |
+| handling | Mean of rated pitch and yaw |
+| speed / scm_speed | Maximum / SCM speed rating |
+| custom | Weighted sum of bounded stat utilities, described below |
+| cargo (workbench) | Exported cargo-grid SCU; no equipment search |
 
 These are explicit preference scores, not physical units. PvE gives handling less weight and uses finite-duration DPS to include ammo endurance. It is not a universal definition of PvE quality. The same normalization is used across ships so the score does not change merely because the comparison group changes.
 
 For stealth and balanced, `damage_floor` retains at least that fraction of the highest finite-duration DPS among feasible candidates found that meet the hard constraints. Default 0.9. This is relative to this search, not a proven theoretical maximum. In cross-ship comparisons the floor applies separately to each ship.
 
 `min_range` and `min_velocity` require every installed pilot gun to meet the threshold. They do not estimate hit probability. Collector and special equipment may be compatible but unobtainable; the source has no trusted availability contract here, and all results disclose this.
+
+### Browser priority budget
+
+The UI activity buttons set **custom** weights that the player can change; they do not call the older CLI `pve` scoring formula. Initial presets: PvE 65% firepower / 25% shields / 10% handling; PvP 75% handling / 20% firepower / 5% shields; damage + stealth 50% each; cargo 65% cargo / 15% shields / 15% speed / 5% handling.
+
+For an increasing stat, utility is `value / (value + scale)`. For stealth it is `scale / (scale + max(EM, IR))`. The preference score is `100 * sum(weight/100 * utility)`. Fixed scales allow comparisons without changing the meaning when candidates change. The following initial scales are design choices, not game constants:
+
+| Priority | Stat | Half-score scale |
+| --- | --- | --- |
+| Firepower | Finite-engagement pilot hull DPS | 1,500 DPS |
+| Shielding | Shield HP | 10,000 HP |
+| Stealth | Larger of estimated EM and IR | 10,000 |
+| Maneuverability | Average pitch and yaw | 60 degrees/second |
+| Speed | Maximum rated speed | 1,000 m/s |
+| Hull | Exported total part health | 20,000 HP |
+| Armor | Exported armor health | 10,000 HP |
+| Cargo | Exported cargo-grid capacity | 100 SCU |
+
+Weights are nonnegative percentages totaling 100. UI redistribution is proportional across the other weights, using largest-remainder integer rounding. When all other weights were zero, the released share is divided evenly. Missing positively weighted stats exclude a candidate; zero cargo or zero damage is known zero, not missing. Ratings are bounded to stop a stat's raw unit magnitude from overwhelming another priority. They are not a win probability, guaranteed percentage improvement, or strict lexicographic ranking.
+
+Hull part HP and armor HP are hull characteristics, **not effective hit points, damage-to-destruction or armor penetration simulation**. Cargo grids do not include ore bags. Their weights generally affect ship selection, not equipment selection on a fixed hull. Unarmed ships may qualify for noncombat goals. Stat-identical equipment alternatives are collapsed to one result so the returned cards show distinct modeled trade-offs.
 
 ## Search guarantees
 

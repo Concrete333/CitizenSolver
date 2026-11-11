@@ -153,8 +153,6 @@ class ShipModel:
                     self.active[key] = item
         if missing:
             raise ModelError("Missing component records: " + ", ".join(missing))
-        if not self.pilot_ports:
-            raise ModelError("No verified pilot-controlled guns in this snapshot")
         if not any(kind(x) == "PowerPlant" for x in self.active.values()):
             raise ModelError("No power plant in the snapshot")
         self.variables = []
@@ -211,7 +209,8 @@ class ShipModel:
         pool = (self.ship.get("PowerPools") or {}).get("WeaponGun", {}).get("Size", raw_weapons)
         if pool < 0:
             pool = raw_weapons
-        limits["weapons"] = (1, max(1, math.ceil(min(raw_weapons, pool))))
+        if any(kind(i) == "WeaponGun" for i in items.values()):
+            limits["weapons"] = (1, max(1, math.ceil(min(raw_weapons, pool))))
         return limits
 
     def cooling(self, items, pips):
@@ -248,7 +247,7 @@ class ShipModel:
         if profile != "stealth":
             priority = ["WeaponGun", "Shield", "FlightController", "Radar"] if profile == "damage" else ["Shield", "WeaponGun", "FlightController", "Radar"]
             for typ in priority:
-                keys = ["weapons"] if typ == "WeaponGun" else [k for k, i in items.items() if kind(i) == typ and k in bounds]
+                keys = (["weapons"] if "weapons" in bounds else []) if typ == "WeaponGun" else [k for k, i in items.items() if kind(i) == typ and k in bounds]
                 changing = True
                 while changing:
                     changing = False
@@ -283,8 +282,8 @@ class ShipModel:
         guns = [i for i in items.values() if kind(i) == "WeaponGun"]
         ballistic_demand = sum(usage(i) for i in guns if not (i.get("Weapon") or {}).get("Capacitor"))
         energy_demand = sum(usage(i) for i in guns if (i.get("Weapon") or {}).get("Capacitor"))
-        weapon_ratio = min(1, max(0, pips["weapons"] - ballistic_demand) / energy_demand) if energy_demand else 1
-        if ballistic_demand > pips["weapons"]:
+        weapon_ratio = min(1, max(0, pips.get("weapons", 0) - ballistic_demand) / energy_demand) if energy_demand else 1
+        if ballistic_demand > pips.get("weapons", 0):
             violations.append("Insufficient power for ballistic weapons")
         weapons = [{**self._weapon_cached(i["ClassName"], round(weapon_ratio, 8), duration), "port": k}
                    for k, i in items.items() if kind(i) == "WeaponGun"]
@@ -318,8 +317,12 @@ class ShipModel:
                    ("alpha", "burst_dps", "sustained_dps", "duration_dps", "damage_over_duration", "distortion_alpha", "distortion_burst_dps")}
         metrics.update(em=em, ir=ir, shield_hp=shield_hp, shield_regen=shield_regen,
                        pitch=rates.get("Pitch"), yaw=rates.get("Yaw"), roll=rates.get("Roll"),
-                       minimum_weapon_range=min(number(w["range_m"]) for w in weapons),
-                       minimum_projectile_speed=min(number(w["projectile_speed_m_s"]) for w in weapons))
+                       minimum_weapon_range=min((number(w["range_m"]) for w in weapons), default=0),
+                       minimum_projectile_speed=min((number(w["projectile_speed_m_s"]) for w in weapons), default=0),
+                       scm_speed=speed.get("Scm"), max_speed=speed.get("Max"),
+                       cargo_scu=self.ship.get("Cargo"),
+                       hull_hp=self.ship.get("Health"), armor_hp=armor.get("Health"),
+                       handling=(rates["Pitch"] + rates["Yaw"]) / 2 if rates.get("Pitch") is not None and rates.get("Yaw") is not None else None)
         return {"ship": {"id": self.ship["ClassName"], "name": self.ship["Name"], "role": self.ship.get("Role")},
                 "model_version": MODEL_VERSION, "data": self.catalogue.manifest,
                 "status": "experimental", "feasible": not violations, "violations": violations,
@@ -330,6 +333,7 @@ class ShipModel:
                 "power": {"available": available, "used": used, "allocation": pips, "bounds": bounds},
                 "cooling": {"demand": cooling_load, "available": cooling_output},
                 "loadout": [{"port": k, "hardpoint": self.ports[k][0]["HardpointName"],
+                             "path": self.ports[k][0].get("Path", [self.ports[k][0]["HardpointName"]]), "size": i.get("Size"),
                              "id": i["ClassName"], "name": i["Name"], "type": kind(i),
                              "changed": i["ClassName"] != self.stock.get(k)} for k, i in items.items()],
                 "swaps": {k: i["ClassName"] for k, i in items.items() if i["ClassName"] != self.stock.get(k)},

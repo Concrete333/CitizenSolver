@@ -1,12 +1,39 @@
 # Local API
 
-Run `python -m citizensolver serve --port 8765`. The development server listens only on `127.0.0.1`, performs no writes/downloads, and runs one optimization at a time. There is no UI or authentication. Do not expose this server directly to the Internet. A production adapter can call the same Python functions later.
+Run `python -m citizensolver serve --port 8765`, or use the desktop launcher. The development server listens only on `127.0.0.1`, serves the workbench at `/`, and runs one optimization or market refresh at a time. No authentication is implemented. Do not expose this server directly to the Internet. A production adapter can call the same Python functions later.
 
 ## Reads
 
 - `GET /api/health`: model version and full snapshot provenance.
 - `GET /api/ships`: ship id, name, role, crew and size.
 - `GET /api/ships?role=Medium%20Fighter`: exact role filter.
+- `GET /api/options`: goals, roles, ship list, hangar labels, data provenance and cached price/fit records. Numeric game `size` in `/api/ships` is **not** a hangar size.
+
+## Browser searches
+
+`POST /api/search` returns HTTP 202 with a job `id`. Read `GET /api/jobs/<id>` until `status` is `complete` (with `result`) or `error` (with `error`). Progress contains completed/total ships and the current ship name. The latest four jobs are kept in memory; restarting loses them.
+
+```json
+{
+  "scope": "class",
+  "role": "Medium Fighter",
+  "goal": "custom",
+  "max_usd": 300,
+  "max_auec": 5000000,
+  "require_ingame": true,
+  "hangar": "Small",
+  "search": {
+    "weights": {"handling": 75, "firepower": 20, "shields": 5},
+    "duration": 120, "beam": 3, "passes": 1, "limit": 5
+  }
+}
+```
+
+Use `scope: "ship"` and `ship: "RSI_Meteor"` for a single hull. `max_crew` filters ship comparisons. `hangar` is the largest permitted class: Small, Medium, Large or Extra Large. Budgets are inclusive and conjunctive. Missing required evidence excludes a ship, even in single-ship mode. Results include exclusions and market provenance.
+
+Custom weights total 100; omitted dimensions have zero weight. Keys: `firepower`, `shields`, `stealth`, `handling`, `speed`, `hull`, `armor`, `cargo`. A positive priority with an unknown stat excludes that build. `goal: "cargo"` is a separate stock cargo-grid comparison, not an equipment optimization; it rejects combat constraints instead of ignoring them.
+
+`POST /api/market/refresh` with `{}` starts a job that fetches the public FleetYards model pages and atomically replaces `data/market.json`. Failed downloads leave the old cache intact. Other endpoints do not download data or write user files.
 
 ## Evaluate
 
@@ -41,7 +68,7 @@ Optional `pips` supplies a complete mapping of powered port ids and `weapons` to
 }
 ```
 
-Other constraints: `min_dps` (finite-duration hull DPS), `min_pitch`, `min_yaw`, `min_velocity`, `max_em`, `max_ir`. JSON fields use snake_case; CLI flags use hyphens. All metrics are numerical, unrounded internally. All responses are JSON.
+Other constraints: `min_dps` (finite-duration hull DPS), `min_pitch`, `min_yaw`, `min_velocity`, `max_em`, `max_ir`. JSON fields use snake_case; CLI flags use hyphens. Known metrics are numerical, unrounded internally; unknown metrics are null. API responses are JSON.
 
 Errors: 400 invalid input, 403 disallowed Origin, 404 unknown route, 409 search busy, 415 wrong media type. Body limit: 64 KiB. The local API does not enable cross-origin access.
 

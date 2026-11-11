@@ -1,13 +1,17 @@
 """Bounded, deterministic beam search; never claims a global optimum."""
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 import math
 import time
 
 from .engine import ModelError, ShipModel
 
-GOALS = ("damage", "burst", "alpha", "stealth", "balanced", "pve")
+GOALS = ("damage", "burst", "alpha", "stealth", "balanced", "pve", "pvp", "shields", "shield_regen", "handling", "speed", "scm_speed", "custom")
+PRIORITIES = {"firepower": ("duration_dps", 1500), "shields": ("shield_hp", 10000),
+              "stealth": ("signature", 10000), "handling": ("handling", 60),
+              "speed": ("max_speed", 1000), "hull": ("hull_hp", 20000),
+              "armor": ("armor_hp", 10000), "cargo": ("cargo_scu", 100)}
 
 
 @dataclass(frozen=True)
@@ -27,6 +31,7 @@ class Search:
     max_em: float | None = None
     max_ir: float | None = None
     max_evaluations: int = 15000
+    weights: dict = field(default_factory=lambda: {"firepower": 50, "stealth": 50})
 
     def __post_init__(self):
         if self.goal not in GOALS:
@@ -41,11 +46,17 @@ class Search:
                 raise ValueError(f"{name} must be a finite, nonnegative number")
         if not 1 <= self.duration <= 3600 or not 0 <= self.damage_floor <= 1:
             raise ValueError("Duration must be 1..3600 seconds and damage_floor 0..1")
+        if (not isinstance(self.weights, dict) or not self.weights or set(self.weights) - PRIORITIES.keys()
+            or any(type(v) not in (int, float) or not math.isfinite(v) or not 0 <= v <= 100 for v in self.weights.values())
+            or not math.isclose(sum(self.weights.values()), 100, abs_tol=1e-6)):
+            raise ValueError("Priority percentages must total 100")
 
 
-def score(metrics, goal):
+def score(metrics, goal, weights=None):
     dps = metrics["duration_dps"]
     signature = max(metrics["em"], metrics["ir"] or 0)
+    if goal == "custom":
+        return sum(weight / 100 * utility(metrics, key) for key, weight in weights.items() if weight)
     if goal == "damage":
         return metrics["sustained_dps"]
     if goal == "burst":
@@ -54,10 +65,45 @@ def score(metrics, goal):
         return metrics["alpha"]
     if goal == "stealth":
         return -signature
+    if goal == "shields":
+        return metrics["shield_hp"]
+    if goal == "shield_regen":
+        return metrics["shield_regen"]
+    if goal == "handling":
+        return metrics["handling"] or 0
+    if goal in {"speed", "scm_speed"}:
+        return metrics["max_speed" if goal == "speed" else "scm_speed"] or 0
+    if goal == "pvp":
+        # Bounded utility terms keep handling dominant regardless of raw stat scale.
+        handling = (metrics["handling"] or 0) / ((metrics["handling"] or 0) + 60)
+        damage = dps / (dps + 1500)
+        shield = metrics["shield_hp"] / (metrics["shield_hp"] + 5000)
+        return .75 * handling + .20 * damage + .05 * shield
     if goal == "pve":
         # Explicit fixed units prevent the cohort changing the meaning of the score.
         return .7 * dps / 1000 + .25 * metrics["shield_hp"] / 10000 + .05 * (metrics["pitch"] or 0) / 100
     return dps / (1 + signature / 10000)
+
+
+def utility(metrics, key):
+    metric, scale = PRIORITIES[key]
+    if key == "stealth":
+        value = max(metrics["em"], metrics["ir"]) if metrics.get("em") is not None and metrics.get("ir") is not None else None
+    else:
+        value = metrics.get(metric)
+    if value is None or value < 0:
+        return 0
+    return scale / (scale + value) if key == "stealth" else value / (scale + value)
+
+
+def known_priorities(metrics, weights):
+    for key, weight in weights.items():
+        if not weight:
+            continue
+        required = ("em", "ir") if key == "stealth" else (PRIORITIES[key][0],)
+        if any(metrics.get(k) is None for k in required):
+            return False
+    return True
 
 
 def meets(metrics, request):
@@ -81,6 +127,8 @@ def optimize(catalogue, ship, request=None):
     request = request or Search()
     started = time.monotonic()
     model = ShipModel(catalogue, ship)
+    if request.goal in {"damage", "burst", "alpha", "pve", "pvp", "balanced"} and not model.pilot_ports:
+        raise ModelError("No verified pilot-controlled guns for this combat objective")
     baseline = model.evaluate(duration=request.duration)
     archive = {}
     errors = dict(model.excluded)
@@ -113,7 +161,7 @@ def optimize(catalogue, ship, request=None):
         chosen = []
         # Keep damage and signature extremes alive even while searching for a compromise.
         goals = [request.goal, "damage", "stealth"]
-        lists = [sorted(pool, key=lambda s: (s["feasible"], meets(s["metrics"], request), score(s["metrics"], g)), reverse=True)
+        lists = [sorted(pool, key=lambda s: (s["feasible"], meets(s["metrics"], request), score(s["metrics"], g, request.weights)), reverse=True)
                  for g in goals]
         seen = set()
         index = 0
@@ -155,20 +203,32 @@ def optimize(catalogue, ship, request=None):
             break
         completed_passes += 1
     feasible = [s for s in archive.values() if s["feasible"] and meets(s["metrics"], request)]
+    if request.goal == "custom":
+        feasible = [s for s in feasible if known_priorities(s["metrics"], request.weights)]
+    required = {"handling": "pitch", "speed": "max_speed", "scm_speed": "scm_speed"}.get(request.goal)
+    if required:
+        feasible = [s for s in feasible if s["metrics"].get(required) is not None
+                    and (request.goal != "handling" or s["metrics"].get("yaw") is not None)]
     best_damage = max((s["metrics"]["duration_dps"] for s in feasible), default=0)
     if request.goal in {"stealth", "balanced"}:
         feasible = [s for s in feasible if s["metrics"]["duration_dps"] >= request.damage_floor * best_damage - 1e-8]
-    ranked = sorted(feasible, key=lambda s: (score(s["metrics"], request.goal), s["metrics"]["duration_dps"]), reverse=True)
+    ranked = sorted(feasible, key=lambda s: (score(s["metrics"], request.goal, request.weights), s["metrics"]["duration_dps"]), reverse=True)
     selected = []
     seen_results = set()
+    seen_metrics = set()
     for state in ranked:
         result = model.evaluate(state["swaps"], profile=state["profile"], duration=request.duration)
         # Profiles producing identical equipment and pips are the same build.
         identity = (state["key"][0], tuple(sorted(result["power"]["allocation"].items())))
-        if identity in seen_results:
+        # Stat-identical alternatives obscure the trade-offs; keep one exact fit.
+        metric_identity = tuple((k, round(v, 6) if v is not None else None) for k, v in sorted(result["metrics"].items()))
+        if identity in seen_results or metric_identity in seen_metrics:
             continue
         seen_results.add(identity)
-        result["score"] = score(result["metrics"], request.goal)
+        seen_metrics.add(metric_identity)
+        result["score"] = score(result["metrics"], request.goal, request.weights)
+        if request.goal == "custom":
+            result["priority_scores"] = {k: utility(result["metrics"], k) * 100 for k, w in request.weights.items() if w}
         result["nondominated_in_searched_candidates"] = not any(dominates(s["metrics"], state["metrics"]) for s in feasible)
         selected.append(result)
         if len(selected) == request.limit:

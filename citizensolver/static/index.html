@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>CitizenSolver · Find your fit</title>
+  <link rel="stylesheet" href="/style.css">
+  <script defer src="/priorities.js"></script><script defer src="/app.js"></script>
+</head>
+<body>
+<header class="topbar"><a class="brand" href="/" aria-label="CitizenSolver home"><span class="brand-mark">C<span>◆</span></span> CITIZEN<span>SOLVER</span></a><div class="top-meta"><span class="status-dot"></span> LOCAL WORKBENCH <span class="badge">EXPERIMENTAL</span></div></header>
+<main>
+  <div class="hero"><div><p class="eyebrow">THE CONCRETE FOUNDRY / FLIGHT LAB</p><h1>Every ship is a trade-off.<br><span>Make yours.</span></h1><p class="intro">Choose your ship. Set your priorities. See what you gain — and what you give up.</p></div><div class="version-card"><span class="eyebrow">GAME DATA</span><strong id="game-version">Loading catalogue…</strong><span id="coverage">Independent estimates · pilot weapons</span></div></div>
+  <form id="solver" class="workspace">
+    <aside class="panel setup">
+      <div class="section-heading"><span class="step">01</span><h2>Define your search</h2></div>
+      <div class="segmented scope"><label><input type="radio" name="scope" value="ship" checked><span>Fit my ship</span></label><label><input type="radio" name="scope" value="class"><span>Find a ship</span></label></div>
+      <div id="ship-fields"><label for="ship-filter">Ship</label><input id="ship-filter" type="search" placeholder="Search the catalogue…" autocomplete="off"><select id="ship" aria-label="Choose ship"></select><p id="ship-facts" class="hint"></p></div>
+      <div id="class-fields" hidden><label for="role">Ship class / role</label><select id="role"><option value="">All roles</option></select><label for="crew">Maximum rated crew</label><input id="crew" type="number" min="1" step="1" placeholder="Any crew size"><p class="hint">Crew is a ship rating. Damage calculations count pilot-controlled guns only.</p></div>
+      <label for="goal">Goal</label><select id="goal"></select><p id="goal-description" class="hint"></p>
+      <div id="damage-retention" hidden><label for="retention">Keep at least <output id="retention-value">90%</output> of damage</label><input id="retention" type="range" min="0" max="100" value="90"><p class="hint">90% allows up to 10% less engagement damage than the best feasible build found for each ship, in exchange for lower signatures.</p></div>
+      <div class="divider"></div><div class="section-heading"><span class="step">02</span><h2>Set your limits</h2><span class="small-badge">OPTIONAL</span></div>
+      <label for="max-usd">Ship budget <span>USD reference</span></label><div class="affix"><span>$</span><input id="max-usd" type="number" min="0" step="1" placeholder="No limit"></div>
+      <label for="max-auec">Ship budget <span>in-game aUEC</span></label><div class="affix"><span>¤</span><input id="max-auec" type="number" min="0" step="1" placeholder="No limit"></div>
+      <label class="check"><input id="ingame" type="checkbox"> Require an in-game shop listing</label>
+      <p class="hint">Both entered budgets must be met. Prices cover the ship only. USD is a reference pledge price, excluding tax; equipment costs and current cash availability are not checked.</p>
+      <label for="hangar">Must fit in my hangar</label><select id="hangar"><option value="">Any hangar</option><option>Small</option><option>Medium</option><option>Large</option><option>Extra Large</option></select><p class="hint">Includes smaller ships. Fit is inferred from FleetYards dock classes; unknown fit or prices are excluded when that limit is active.</p>
+      <details class="advanced"><summary>Combat & search settings</summary><label for="duration">Engagement duration <span>seconds</span></label><input id="duration" type="number" min="1" max="3600" value="120"><label for="min-shield">Minimum shield HP</label><input id="min-shield" type="number" min="0" value="0"><label for="min-range">Minimum gun range <span>meters</span></label><input id="min-range" type="number" min="0" value="0"><label for="depth">Search depth</label><select id="depth"><option value="quick">Quick exploration</option><option value="deep">Deeper search · takes longer</option></select><p class="hint">Searches compatible equipment and three power profiles. A broader search can find better builds; neither proves a global optimum.</p></details>
+      <button id="solve" class="primary" type="submit" disabled>Find my fits <span>↗</span></button>
+      <p class="hint centered">Rankings are experimental. Validate a build in game.</p>
+    </aside>
+    <div class="main-column">
+      <section class="panel priority-panel" aria-labelledby="priority-heading">
+        <div class="section-heading"><span class="step">03</span><h2 id="priority-heading">What matters to you?</h2><span class="total" id="total">100<span>% allocated</span></span></div>
+        <p class="section-description">One shared priority budget. Raise one bar and the others make room.</p>
+        <div class="presets" aria-label="Activity presets"><button type="button" data-preset="balanced" class="active">Damage + stealth</button><button type="button" data-preset="pve">PvE combat</button><button type="button" data-preset="pvp">PvP combat</button><button type="button" data-preset="cargo">Cargo hauling</button><button type="button" disabled title="Mining performance needs a separate model">Mining <small>SOON</small></button></div>
+        <div class="priority-toolbar"><span id="preset-description">Equal importance to firepower and low signatures.</span><div class="segmented view-mode" aria-label="Priority control style"><label><input type="radio" name="view" value="pips" checked><span>Pips</span></label><label><input type="radio" name="view" value="sliders"><span>Sliders</span></label></div></div>
+        <div id="priorities" class="priorities pips"></div>
+        <div id="fixed-traits" class="note">Cargo, hull and armor are mostly hull choices. On one ship, their priorities cannot create extra capacity.</div>
+        <details class="scoring-details"><summary>How these priorities become a ranking</summary><p>Each stat is converted to a 0–100 preference score using a fixed diminishing-return curve, then multiplied by your percentage. The result is a preference match, not a combat win rate. Zero means “ignore this stat.” Builds missing a stat you prioritize are excluded.</p><p>Stealth uses the larger of modeled EM and IR. Handling averages rated pitch and yaw; acceleration and power-dependent flight are not yet simulated. Hull is the sum of exported part HP, and armor is the exported armor-health rating — neither is effective hit points or penetration resistance. Cargo counts grid SCU, not mining bags.</p><p>Half-score reference points: 1,500 engagement DPS; 10,000 shield HP; 10,000 signature; 60°/s handling; 1,000 m/s speed; 20,000 hull HP; 10,000 armor HP; 100 SCU. These initial curves are tunable product assumptions.</p></details>
+        <div class="priority-action"><button id="solve-priorities" class="primary" type="submit" disabled>Find my fits <span>↗</span></button></div>
+      </section>
+      <section aria-labelledby="results-heading" class="results-section">
+        <div class="results-heading"><div><p class="eyebrow">YOUR FLIGHT PLAN</p><h2 id="results-heading">Recommended fits</h2></div><button id="export" class="quiet" type="button" hidden>↓ Save results</button></div>
+        <div id="search-status" class="status" role="status" aria-live="polite">Loading your local catalogue…</div>
+        <progress id="progress" hidden aria-label="Search progress"></progress>
+        <div id="results"><div class="empty-state panel"><div class="radar" aria-hidden="true"><span>◇</span></div><h3>Your next ship starts here.</h3><p>Set your priorities, then find the strongest fits within your limits.</p><div class="empty-stats"><span>EXACT LOADOUTS</span><span>VISIBLE TRADE-OFFS</span><span>SAVE YOUR BUILD</span></div></div></div>
+        <details id="exclusions" class="panel" hidden><summary></summary><div></div></details>
+      </section>
+      <section class="roadmap"><p class="eyebrow">ON THE FLIGHT PATH</p><div id="roadmap"></div></section>
+    </div>
+  </form>
+  <footer><div><strong>CitizenSolver</strong> · An independent fan tool. Not affiliated with CIG or erkul.<br><span id="source-info">Game data: StarCitizenWiki/scunpacked-data · Prices and dock classes: FleetYards.</span></div><button type="button" id="refresh-market" class="quiet">↻ Refresh price & hangar data</button></footer>
+</main>
+</body></html>

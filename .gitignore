@@ -5,4 +5,5 @@ data/
 builds/
 verification/*.log
 verification/*.json
+verification/*.jpg
 *.egg-info/
